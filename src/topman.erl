@@ -32,10 +32,11 @@
          handle_info/2, terminate/2, code_change/3]).
 
 -record(state, {
-          topic_xref,
-          server_xref
+          topic_xref,       %% {key, value} -> {Topic, PubSubPid}
+          server_xref       %% {key, value} -> {PubSubPid, {Topic, monitor(PubSubPid)}}
          }).
 
+%% 只有 publish 采用广播
 publish(Msg, Topic) 
   when is_binary(Topic) ->
     gen_server:abcast(?MODULE, {publish, Msg, Topic});
@@ -69,8 +70,8 @@ stop(Ref) ->
 init([]) ->
     process_flag(trap_exit, true),
     State = #state{
-      topic_xref = dict:new(), 
-      server_xref = dict:new()
+        topic_xref = dict:new(), 
+        server_xref = dict:new()
      },
     {ok, State}.
 
@@ -128,6 +129,7 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+%% 确保有 pubsub 进程关联到指定 Topic
 ensure_server(Topic, State) ->
     Xref = State#state.topic_xref,
     case dict:find(Topic, Xref) of
@@ -137,8 +139,13 @@ ensure_server(Topic, State) ->
             Xref2 = State#state.server_xref;
         _ ->
             %% start a new topic server
+            %% 启动与指定 Topic 关联的 pubsub 进程
             {ok, Srv} = pubsub:start(Topic),
+            %% 对 pubsub 进程进行 monitor
             Ref = erlang:monitor(process, Srv),
+            %% store(Key, Value, Dict1) -> Dict2
+            %% 以键值（Key - Value）对的形式存储在字典里。
+            %% 如果字典里已经存在 Key 的键，则把跟 Key 相关的值替换为 Value
             Xref1 = dict:store(Topic, Srv, Xref),
             Xref2 = dict:store(Srv, {Topic, Ref}, State#state.server_xref)
     end,

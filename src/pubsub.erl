@@ -28,7 +28,7 @@
          handle_info/2, terminate/2, code_change/3]).
 
 -record(state, {
-          topic,
+          topic,                        %% 当前 pubsub 进程负责处理的 topic
           subs = ets:new(subs, [set])
          }).
 

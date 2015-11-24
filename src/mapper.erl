@@ -23,6 +23,15 @@
 %%% Lightweight process registry
 %%% 
 
+%%
+%% 值得注意的点：
+%% 1. 所有 ets 接口调用都不判定返回值
+%% 2. 在 ets 中构建双向映射关系，而非单向
+%% 3. 只有 delete 结构采用异步操作方式
+%% 4. 两个会 delete 数据的点
+%% 5. 所有供外部调用的 API 均使用当前进程的名字 client_proxy_mapper 进行调用
+%%
+
 -module(mapper).
 
 -export([add/2, delete/2, where/2, info/1, start/1, stop/1]).
@@ -35,6 +44,9 @@
           pid_key = ets:new(mapper, [set])
          }).
 
+%% 向两个 ets 表中添加映射关系
+%% a. 若映射关系已经存在，则不添加
+%% b. 否则，添加并 monitor 调用该接口的进程 pid
 add(Ref, Key) ->
     gen_server:call(Ref, {add, Key, self()}).
 
@@ -42,12 +54,15 @@ add(Ref, Key) ->
 delete(Ref, Key) ->
     gen_server:cast(Ref, {delete, Key}).
 
+%% 通过 key 查对应的 pid
 where(Ref, Key) ->
     gen_server:call(Ref, {where, Key}).
 
+%% 查询两个 ets 表的属性设置
 info(Ref) ->
     gen_server:call(Ref, info).
 
+%% Name -> 原子 client_proxy_mapper
 start(Name) 
   when is_atom(Name) ->
     gen_server:start_link({local, Name}, ?MODULE, [], []).
@@ -96,9 +111,12 @@ handle_call({add, Key, Pid}, _, State) ->
 handle_call(Event, From, State) ->
     {stop, {unknown_call, Event, From}, State}.
 
+%% 发现 janus_app 进程退出
 handle_info({'EXIT', _Pid, normal}, State) ->
     {noreply, State};
 
+%% 发现调用 add 接口的进程异常
+%% Pid -> 被 monitor 进程的 pid
 handle_info({'DOWN', _, process, Pid, _}, State) ->
     {noreply, do_delete(Pid, State)};
 

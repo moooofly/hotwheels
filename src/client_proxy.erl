@@ -33,14 +33,15 @@
 -define(HEARTBEAT, 30000).
 
 -record(state, {
-          token,
-          parent,
-          send,
+          token,        %% 标识当前进程的随机十六进制字符串
+          parent,       %% janus_flash 进程 pid
+          send,         %% fun(Bin) -> gen_tcp:send(Socket, [Bin, 1]) end
           heartbeat,
           killswitch,
           messages
          }).
 
+%% 在 mapper 中查找 Token 对应的 pid
 locate(Token) ->
     mapper:where(client_proxy_mapper, Token).
 
@@ -53,7 +54,10 @@ attach(Ref, Send) ->
 detach(Ref) ->
     gen_server:cast(Ref, {detach, self()}).
 
+%% Send 定义为 fun(Bin) -> gen_tcp:send(Socket, [Bin, 1]) end
+%% 该接口仅被 janus_flash 模块调用
 start(Send) ->
+    %% 生成随机十六进程字符串作为 token
     Token = common:random_token(),
     {ok, Pid} = gen_server:start_link(?MODULE, [Token, self(), Send], []),
     {ok, Pid, Token}.
@@ -61,14 +65,16 @@ start(Send) ->
 stop(Ref) ->
     gen_server:cast(Ref, stop).
 
+%% Parent -> 为 janus_flash 进程 pid
 init([Token, Parent, Send]) ->
     process_flag(trap_exit, true),
+    %% 将当前进程 pid 以 token 作为标识保存到 ets 表中
     ok = mapper:add(client_proxy_mapper, Token),
     State = #state{
-      token = Token,
-      parent = Parent,
-      send = Send,
-      messages = []
+        token = Token,
+        parent = Parent,
+        send = Send,
+        messages = []
      },
    {ok, State}.
 

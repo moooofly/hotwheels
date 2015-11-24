@@ -5,8 +5,8 @@
 -record(state, {
           socket,
           data,
-          proxy,
-          token
+          proxy,  %% client_proxy 进程 pid
+          token   %% 标识 client_proxy 进程的随机十六进制字符串
          }).
 
 start(Socket) ->
