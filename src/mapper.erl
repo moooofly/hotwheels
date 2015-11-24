@@ -38,6 +38,7 @@
 add(Ref, Key) ->
     gen_server:call(Ref, {add, Key, self()}).
 
+%% 只有删除才可以异步处理
 delete(Ref, Key) ->
     gen_server:cast(Ref, {delete, Key}).
 

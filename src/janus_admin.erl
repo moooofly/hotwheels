@@ -25,11 +25,12 @@
          get_env/1, get_env/2,
          cluster/0, join/1]).
 
+%%
 make_boot() ->
     systools:make_script("janus", [local, {outdir, "./ebin"}]).
 
 %%% Read application configuration variables
-
+%% 同时考虑了 janus.app 中的 env 配置和 cmd 上的设置
 get_env(Var) ->
     get_env(Var, undefined).
 
@@ -76,7 +77,7 @@ cluster([H|T], Acc) ->
     
 
 %%% Ping and return unreachable nodes
-
+%% 通过 ping 方式过滤出无法连通的节点
 join(Nodes) ->
     F = fun(Node) ->
                 pong == net_adm:ping(Node)

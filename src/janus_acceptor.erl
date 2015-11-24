@@ -19,6 +19,15 @@
 %%% FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER 
 %%% DEALINGS IN THE SOFTWARE.
 
+%%
+%% 此模块实现要点：
+%% 1. proc_lib:start_link + proc_lib:init_ack
+%% 2. 针对 gen_tcp:F 均使用了 catch
+%% 3. 为每个连接上的 client 在 janus_transport_sup 下动态创建一个 transport 进程进行处理
+%%
+
+
+
 -module(janus_acceptor).
 
 -export([start_link/3]).
@@ -27,11 +36,13 @@
 
 -record(state, {
           parent,
-          module,  % Handling module
+          module,  % Handling module 目前为 transport
           port,
           listener % Listening socket
          }).
 
+%% Parent -> janus_app pid
+%% Module -> transport 模块
 start_link(Parent, Port, Module) 
   when is_pid(Parent),
        is_list(Port), 
@@ -43,6 +54,7 @@ start_link(Parent, Port, Module)
        is_integer(Port), 
        is_atom(Module) ->
     Args = [Parent, Port, Module],
+    %% [Note]
     proc_lib:start_link(?MODULE, acceptor_init, Args).
 
 acceptor_init(Parent, Port, Module) ->
@@ -54,6 +66,7 @@ acceptor_init(Parent, Port, Module) ->
     error_logger:info_msg("Listening on port ~p~n", [Port]),
     case (catch do_init(State)) of
         {ok, ListenSocket} ->
+            %% [Note] 用法 + 位置
             proc_lib:init_ack(State#state.parent, {ok, self()}),
             acceptor_loop(State#state{listener = ListenSocket});
         Error ->
@@ -89,9 +102,11 @@ acceptor_loop(State) ->
 
 
 handle_connection(State, Socket) ->
+    %% 启动 用于处理客户端连接 的进程
     {ok, Pid} = janus_app:start_transport(State#state.port),
     ok = gen_tcp:controlling_process(Socket, Pid),
     %% Instruct the new handler to own the socket.
+    %% 同步控制
     (State#state.module):set_socket(Pid, Socket).
 
 handle_error(timeout) ->
@@ -105,6 +120,7 @@ handle_error(emfile) ->
     %% Too many open files -> Out of sockets...
     sleep(200);
 
+%% 这点说明有点意思
 handle_error(closed) ->
     error_logger:info_report("The accept socket was closed by " 
 			     "a third party. "

@@ -30,10 +30,12 @@
 -record(state, {
           port,
           socket,
-          transport,
+          transport,    %% 目前为 janus_flash
           state
          }).
 
+%% janus_acceptor 通过此接口同步告知 socket 的控制权成功转移
+%% Ref -> 用于处理客户端连接的进程 pid ，应该就是当前进程 pid
 set_socket(Ref, Sock) ->
     gen_server:cast(Ref, {set_socket, Sock}).
 
@@ -113,6 +115,7 @@ dispatch(Data, Mod, State = #state{transport = Mod}) ->
     {ok, Keep, TS} = Mod:process(Data, State#state.state),
     keep_alive_or_close(Keep, State#state{state = TS}).
 
+%% 判定当前 socket 连接是否需要保持
 keep_alive_or_close(Keep, State) ->
     if 
         Keep /= keep_alive ->

@@ -10,12 +10,13 @@
          }).
 
 start(Socket) ->
+    %% [Node] [Bin, 1] 的设计意图
     Send = fun(Bin) -> gen_tcp:send(Socket, [Bin, 1]) end,
     {ok, Proxy, Token} = client_proxy:start(Send),
     State = #state{
-      socket = Socket, 
-      proxy = Proxy, 
-      token = Token
+        socket = Socket, 
+        proxy = Proxy, 
+        token = Token
      },
     JSON = {struct,
             [{<<"timestamp">>, tuple_to_list(now())},

@@ -29,77 +29,77 @@
 -define(MAX_TIME,      60).
 -define(LISTEN_PORT, 8081).
 
+
 %% A startup function for new client connection handling.
 %% To be called by the TCP listener process.
-
 start_transport(Port) ->
     supervisor:start_child(janus_transport_sup, [Port]).
 
+%% 应用启动入口
 start(_Type, _Args) ->
     Port = janus_admin:get_env(listen_port, ?LISTEN_PORT),
-    supervisor:start_link({local, ?MODULE}, 
-                          ?MODULE, 
-                          [Port, transport]).
+    supervisor:start_link({local, ?MODULE}, ?MODULE, [Port, transport]).
 
 stop(_S) ->
     ok.
 
 %% Supervisor behaviour callbacks
-
 init([Port, Module]) ->
     {ok,
-     {_SupFlags = {one_for_one, ?MAX_RESTART, ?MAX_TIME},
-      [
-       %% TCP server
-       {janus_sup,
-        {janus_acceptor, start_link, [self(), Port, Module]},
-        permanent,
-        2000,
-        worker,
-        [janus_acceptor]
-       },
-       %% Topic manager
-       {janus_topman_sup,
-        {topman, start, []},
-        permanent,
-        2000,
-        worker,
-        [topman]
-       },
-       %% Client proxy mapper
-       {janus_proxy_mapper_sup,
-        {mapper, start, [client_proxy_mapper]},
-        permanent,
-        2000,
-        worker,
-        [mapper]
-       },
-       %% Client instance supervisor
-       {janus_transport_sup,
-        {supervisor, start_link, [{local, janus_transport_sup}, 
-                                  ?MODULE, [Module]]},
-        permanent,
-        infinity,
-        supervisor,
-        []
-       }
-      ]
-     }
+        {_SupFlags = {one_for_one, ?MAX_RESTART, ?MAX_TIME},
+            [
+                %% TCP server
+                {janus_sup,
+                    {janus_acceptor, start_link, [self(), Port, Module]},
+                    permanent,
+                    2000,
+                    worker,
+                    [janus_acceptor]
+                },
+                %% Topic manager
+                {janus_topman_sup,
+                    {topman, start, []},
+                    permanent,
+                    2000,
+                    worker,
+                    [topman]
+                },
+                %% Client proxy mapper
+                {janus_proxy_mapper_sup,
+                    {mapper, start, [client_proxy_mapper]},
+                    permanent,
+                    2000,
+                    worker,
+                    [mapper]
+                },
+                %% Client instance supervisor
+                %% 连锁启动实现方式
+                {janus_transport_sup,
+                    {supervisor, start_link, [{local, janus_transport_sup}, ?MODULE, [Module]]},
+                    permanent,
+                    infinity,
+                    supervisor,
+                    []
+                }
+            ]
+        }
     };
 
+%% Module -> 目前只有 transport 这个值
 init([Module]) ->
     {ok,
-     {_SupFlags = {simple_one_for_one, ?MAX_RESTART, ?MAX_TIME},
-      [
-       %% TCP Client
-       {undefined,
-        {Module, start_link, []},
-        temporary,
-        2000,
-        worker,
-        []
-       }
-      ]
-     }
+        {_SupFlags = {simple_one_for_one, ?MAX_RESTART, ?MAX_TIME},
+            [
+                %% TCP Client
+                %% 用于处理每个连接上来的客户端的进程
+                {undefined,
+                    {Module, start_link, []},
+                    temporary,
+                    2000,
+                    worker,
+                    []
+                }
+            ]
+        }
     }.
 
