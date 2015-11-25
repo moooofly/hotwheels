@@ -45,6 +45,7 @@ publish(Msg, Topic)
   when is_list(Topic) ->
     publish(Msg, list_to_binary(Topic)).
 
+%% Pid -> 发起订阅的进程 pid ，即对应客户端连接的 client_proxy 进程
 subscribe(Pid, Topic) 
   when is_binary(Topic) ->
     gen_server:cast(?MODULE, {subscribe, Pid, Topic});

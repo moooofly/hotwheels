@@ -20,7 +20,8 @@
              topman,
              t,
              transport,
-             util
+             util,
+             mochijson2
             ]},
   {registered, [janus_sup, 
                 janus_topman_sup,

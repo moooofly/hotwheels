@@ -30,15 +30,17 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -record(barrier, {
-          target,
-          counter,
-          timer
+          target,   %% 计数器目标值，用于 counter 类型的 barrier
+          counter,  %% 计数器当前值，用于 counter 类型的 barrier
+          timer     %% 定时器，用于 time 类型的 barrier
          }).
 
+%% 用于在指定时间到达后停止 barrier
 start(time, Target) 
   when is_tuple(Target) ->
     gen_server:start(barrier, [time, Target], []);
 
+%% 通过计数器控制启动的 bot 数量
 start(counter, Target) 
   when is_integer(Target) ->
     gen_server:start(barrier, [counter, Target], []).
@@ -64,6 +66,7 @@ stop(Barrier)
   when is_pid(Barrier) ->
     gen_server:cast(Barrier, {stop, self()}).
 
+%% 手动增加计数器的值以模拟 bot 数量的增长
 bump(Barrier) ->
     gen_server:cast(Barrier, 'BUMP').
 
@@ -83,6 +86,7 @@ handle_cast('BUMP', State) ->
     N = State#barrier.counter,
     {noreply, State#barrier{ counter = N + 1}};
 
+%% 更新计数器目标值
 handle_cast({'TARGET', N}, State) ->
     {noreply, State#barrier{ target = N }};
 
@@ -92,9 +96,11 @@ handle_cast({stop, _Pid}, State) ->
 handle_cast(Event, State) ->
     {stop, {unknown_cast, Event}, State}.
 
+%% 获取计数器当前值
 handle_call('COUNTER', _From, State) ->
     {reply, State#barrier.counter, State};
 
+%% 获取计数器目标值
 handle_call('TARGET', _From, State) ->
     {reply, State#barrier.target, State};
 
@@ -111,7 +117,9 @@ handle_info(Info, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+%% 等待 barrier 进程的退出
 wait(Barrier) ->
+    %% [Note]
     TE = process_flag(trap_exit, true),
     link(Barrier),
     receive {'EXIT', Barrier, normal} -> ok end,

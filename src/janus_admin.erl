@@ -25,7 +25,7 @@
          get_env/1, get_env/2,
          cluster/0, join/1]).
 
-%%
+%% [Note]
 make_boot() ->
     systools:make_script("janus", [local, {outdir, "./ebin"}]).
 

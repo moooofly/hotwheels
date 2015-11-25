@@ -19,6 +19,8 @@
 %%% FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER 
 %%% DEALINGS IN THE SOFTWARE.
 
+%% flashbot 即闪刷机器人
+
 -module(flashbot).
 -behavior(gen_fsm).
 
@@ -48,6 +50,7 @@ start(Args) ->
     gen_fsm:start_link(?MODULE, Args, []).
 
 init([Parent, Host, Port, Expected, Barrier]) ->
+    %% [Note]
     process_flag(save_calls, 64),
     State = #state{
       parent = Parent,

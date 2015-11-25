@@ -29,15 +29,18 @@
 
 -record(state, {
           topic,                        %% 当前 pubsub 进程负责处理的 topic
-          subs = ets:new(subs, [set])
-         }).
+          subs = ets:new(subs, [set])   %% {Key, Value} -> {Pid, Ref}
+         }).                            %% Pid -> 订阅进程 pid ；Ref -> monitor(Pid)
 
+%% 发布（广播消息给所有订阅者）
 publish(Ref, Msg) ->
     gen_server:cast(Ref, {publish, Msg}).
 
+%% 订阅
 subscribe(Ref, Pid) ->
     gen_server:cast(Ref, {subscribe, Pid}).
 
+%% 去订阅
 unsubscribe(Ref, Pid) ->
     gen_server:cast(Ref, {unsubscribe, Pid}).
 
@@ -54,6 +57,7 @@ init([Topic]) ->
 handle_cast(stop, State) ->
     {stop, normal, State};
 
+%% Pid -> 定于当前 topic 的进程 pid (client_proxy)
 handle_cast({subscribe, Pid}, State) ->
     %% automatically unsubscribe when dead
     Ref = erlang:monitor(process, Pid),
@@ -66,11 +70,13 @@ handle_cast({unsubscribe, Pid}, State) ->
 
 handle_cast({publish, Msg}, State) ->
     io:format("info: ~p~n", [ets:info(State#state.subs)]),
+    %% 为 Msg 内容添加时间戳
     Start = now(),
     {struct, L} = Msg,
     TS = tuple_to_list(Start),
     JSON = {struct, [{<<"timestamp">>, TS}|L]},
     Msg1 = {message, iolist_to_binary(mochijson2:encode(JSON))},
+    %% 广播给所有订阅的进程（内部临时调高进程优先级）
     F = fun({Pid, _Ref}, _) -> Pid ! Msg1 end,
     erlang:process_flag(priority, high),
     ets:foldr(F, ignore, State#state.subs),

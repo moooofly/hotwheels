@@ -26,30 +26,40 @@
 -include_lib("kernel/include/inet.hrl").
 
 -record(state, {
-          bot,
-          barrier,
+          bot,          %% 目前为 flashbot
+          barrier,      %% 目前用作 counter
           args,
-          n,
+          n,            %% 运行 bot 的数目
           good, 
           bad,
           min,
           max, 
           avg,
-          host,
-          port,
-          message,
-          expected,
-          start,
+          host,         %% 目的 ip 地址
+          port,         %% 目的端口
+          message,      %% 待发送消息内容
+          expected,     %% 期望接收的内容
+          start,        %% 开始时间
           launchers,
           where,
           setup,
           stats
          }).
 
+
+%%
+%% Message  -> 例如 {<<"events">>, <<"test_event">>, <<"test">>}
+%% Expected -> 例如
+%%            {struct, [{<<"topic">>, <<"events">>},
+%%                      {<<"event">>, <<"test_event">>},
+%%                      {<<"message_id">>,<<>>},
+%%                      {<<"data">>, <<"test">>}]},
+%%
 run(Bot, Host, Port, Message, Expected, N) 
   when is_tuple(Message),
        is_integer(N) ->
-    {ok, #hostent{h_addr_list = [Addr | _]}} = inet:gethostbyname(Host),    
+    {ok, #hostent{h_addr_list = [Addr | _]}} = inet:gethostbyname(Host),
+    %% 启动 bot 计数器进程
     {ok, Barrier} = barrier:start(counter, N),
     State = #state{
       bot = Bot,
@@ -75,6 +85,7 @@ run(State, 0) ->
     wait(State, 0, 0);
 
 run(State, N) ->
+    %% 从 launcher 进程组中得到一个成员进程 Srv（lancher 进程）
     {Srv, L} = launcher:next(State#state.launchers),
     {ok, Pid} = launcher:launch(Srv, State#state.bot, 
                                 [self(),
@@ -90,7 +101,7 @@ run(State, N) ->
 wait(State, N, M) 
   when State#state.good + State#state.bad < State#state.n ->
     receive
-        connected ->
+        connected ->    %% flashbot 与 janus 成功建立 TCP 连接
             wait(State, N + 1, M);
         disconnected ->
             wait(State, N - 1, M);
@@ -134,9 +145,13 @@ wait(State, _, _) ->
     io:format("~10.4. fms | ~-6.. w~n", [State#state.max / 1000, max]),
     ok.
 
+
+%% 通过 bot 进行测试
+
 test(Bot) ->
     test(Bot, 1, localhost, 8081).
 
+%% bot:test(flashbot, 200).
 test(Bot, N) ->
     test(Bot, N, localhost, 8081).
 
@@ -144,6 +159,7 @@ test(Bot, N, Host, Port)
   when is_atom(Bot),
        is_integer(N),
        is_integer(Port) ->
+    %% [Note]
     pg2:create(launcher),
     case pg2:get_members(launcher) of
         [] -> 
