@@ -55,13 +55,13 @@ ec2: compile make_boot
 	erl $(EC2_OPTS) -name $(NODE) -boot janus 
 
 remsh:
-	erl $(BASIC_OPTS) -name remote -remsh $(NODE)
+	erl $(BASIC_OPTS) -sname remote -remsh $(NODE)
 
 sh: compile 
-	erl $(LOCAL_OPTS) -name debug 
+	erl $(LOCAL_OPTS) -sname debug 
 
 sh1: compile 
-	erl $(LOCAL_OPTS) -name debug1 -remsh debug@$(NODE)
+	erl $(LOCAL_OPTS) -sname debug1 -remsh $(NODE)
 
 clean:
 	rm -rf ebin/*.beam
