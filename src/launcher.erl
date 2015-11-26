@@ -36,7 +36,7 @@
 
 new(Trace) ->
     #state{
-     trace = Trace
+        trace = Trace
     }.
 
 %% Trace -> true | false
@@ -52,7 +52,7 @@ launch(Mod, Args) ->
 %% 在指定 lancher 进程上（Pid）启动 flashbot 
 %% Pid -> 从 lancher 进程组中找到的成员进程 pid
 %% Mod -> flashbot
-%% 
+%% Args -> [CmdPid,janusHost,janusPort,Expected,BarrierPid]
 launch(Pid, Mod, Args) ->
     gen_server:call(Pid, {launch, Mod, Args}).
 
@@ -68,6 +68,7 @@ next([]) ->
     %% 获取进程组 launcher 中的所有进程
     case pg2:get_members(?MODULE) of
         [] ->
+            %% 确保一定会找到
             timer:sleep(100),
             next([]);
         L ->

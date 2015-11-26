@@ -10,7 +10,7 @@
          }).
 
 start(Socket) ->
-    %% [Node] [Bin, 1] 的设计意图
+    %% [Node] [Bin, 1] 的设计意图，协议数据分隔符
     Send = fun(Bin) -> gen_tcp:send(Socket, [Bin, 1]) end,
     {ok, Proxy, Token} = client_proxy:start(Send),
     State = #state{

@@ -21,6 +21,9 @@
 
 %% flashbot 即闪刷机器人
 
+%% 1. gen_fsm 与 {active, once} 的处理结合
+%% 2. 
+
 -module(flashbot).
 -behavior(gen_fsm).
 
@@ -33,17 +36,17 @@
          handle_info/3, terminate/3, code_change/4]).
 
 -record(state, {
-          parent,
-          host, 
-          port,
-          token,
-          start,
-          timer,
-          barrier,
-          expected,
-          socket,
-          data,
-          latency
+          parent,       %% 调用发起者 pid ，即调用 bot:test/1,2,4 的进程
+          host,         %% janus 的监听地址
+          port,         %% janus 的监听端口
+          token,        %% janus 生成随机十六进制字符串，用于标识 topic
+          start,        %% 收到 subscribe ack 的时刻
+          timer,        %% 用于延时停止当前 flashbot 的定时器
+          barrier,      %% counter barrier
+          expected,     %% 希望收到的消息内容
+          socket,       %% connect socket
+          data,         %% 数据接收缓冲
+          latency       %% janus 发出消息到 flashbot 收到消息之间的延迟
          }).
 
 start(Args) ->
@@ -72,87 +75,113 @@ not_connected(connect, State) ->
                           {reuseaddr, true}
                          ], 3000) of
         {ok, Sock} ->
+            %% 告知 TCP 建链成功
             State#state.parent ! connected,
+            %% 获取订阅 token
             ping(State#state{socket = Sock}, no_token);
         _ ->
             reconnect(),
             {next_state, not_connected, State}
     end.
 
+%% 得到 token 后发起订阅
 no_token({struct, [{<<"token">>, Token}]}, State) ->
+    %% 告知 subscribe 发起中
     State#state.parent ! subscribing,
     JSON = mochijson2:encode({struct, [{action, <<"subscribe">>},
                                        {data, <<"events">>}
                                       ]}),
     Data = [<<"<regular-socket/>">>, 0, JSON],
+    %% 发起订阅
     send(Data, State#state{token = Token}, not_subscribed).
 
+%% 订阅成功
 not_subscribed(ack, State) ->
     %% we are ready
+    %% 增加计数器的值 +1
     barrier:bump(State#state.barrier),
     {next_state, subscribed, State#state{start = now()}}.
 
+%% 
 subscribed(token_timeout, State) ->
     {next_state, subscribed, State};
 
-subscribed(ready, State) ->    
+%% 当全部 flashbot 成功 subscribe 后，进入该状态，并在 5s 后停止当前 flashbot
+subscribed(ready, State) ->
     Ref = gen_fsm:send_event_after(5000, timeout),
     {next_state, subscribed, State#state{start = now(), timer = Ref}};
 
-subscribed(timeout, State) ->    
+%% 当前 flashbot 通过超时定时器被停止
+subscribed(timeout, State) ->
+    %% 告知当前 flashbot 停止工作
     State#state.parent ! failure,
     {stop, timeout, State};
 
+%% 收到期望的订阅内容
 subscribed(Expected, State) 
   when Expected == State#state.expected ->
+    %% 告知收到订阅消息
     State#state.parent ! {success, State#state.latency},
     JSON = mochijson2:encode({struct, [{action, <<"unsubscribe">>},
                                        {data, <<"events">>}]}),
     Data = [<<"<regular-socket/>">>, 0, JSON],
+    %% 取消订阅
     send(Data, State, subscribed),
     {stop, normal, State}.
-    
+
+%% [Note]
 handle_event(Event, Where, State) ->
     {stop, {unknown_event, Event, Where}, State}.
 
 handle_sync_event(Event, From, Where, State) ->
     {stop, {unknown_sync_event, Event, From, Where}, State}.
 
+%% 若发现 barrier 停止了，则表明所有 flashbot 已经成功订阅
 handle_info({'DOWN', _, process, Pid, normal}, Where, State)
   when Pid == State#state.barrier ->
+    %% 此处 Where 只能是 subscribed
     ?MODULE:Where(ready, State);
 
+%% 收到 PING
 handle_info({tcp, Sock, <<"PING", 1>>}, Where, State) ->
     inet:setopts(Sock, [{active, once}]),
     send(State#state.socket, <<"PONG">>, Where);
 
+%% 未完整数据处理
 handle_info({tcp, Sock, Bin}, Where, State) 
   when State#state.data /= undefined ->
     inet:setopts(Sock, [{active, once}]),
     Bin1 = list_to_binary([State#state.data, Bin]),
+    %% [Note] 清空缓冲，特别用意
     State1 = State#state{data = undefined},
     ?MODULE:handle_info({tcp, Sock, Bin1}, Where, State1);
 
+%% 收到 ACK
 handle_info({tcp, Sock, <<"ACK", 1>>}, Where, State) ->
     inet:setopts(Sock, [{active, once}]),
+    %% 此处 Where 只能是 not_subscribed
     ?MODULE:Where(ack, State);
 
 handle_info({tcp, Sock, Bin}, Where, State) ->
     inet:setopts(Sock, [{active, once}]),
     case bin:split("\\001", Bin) of
-        {more, Bin} ->
+        {more, Bin} ->  %% 数据不足
             {next_state, Where, State#state{data = Bin}};
-        {ok, <<>>, <<>>} ->
+        {ok, <<>>, <<>>} -> %% [Note] 这啥情况
             {next_state, Where, State#state{data = Bin}};
-        {error, Error} ->
+        {error, Error} ->   %% [Note] bin:split/2 不会返回这种情况，so？
             {stop, {packet_split, Error}, State};
         {ok, Bin1, Rest} ->
             Now = now(),
             JSON = mochijson2:decode(Bin1),
             %% grab the timestamp
+            %% L -> [{<<"token">>, Token}]
             {struct, [{<<"timestamp">>, TS}|L]} = JSON,
+            %% 从 janus 发送，到 flashbot 接收之间的延迟
             Delta = timer:now_diff(Now, list_to_tuple(TS)),
             State1 = State#state{latency = Delta, data = undefined},
+            %% 发起订阅
+            %% 此处的 where 只能是 no_token
             case ?MODULE:Where({struct, L}, State1) of 
                 {next_state, Where1, State2} ->
                     ?MODULE:handle_info({tcp, Sock, Rest}, Where1, State2);
@@ -161,10 +190,14 @@ handle_info({tcp, Sock, Bin}, Where, State) ->
             end
     end;
 
+%% TCP 链路关闭或异常
+%% [Note] tcp_closed 和 tcp_error 分别代表什么
 handle_info(X, _, State) 
   when element(1, X) == tcp_closed;
        element(1, X) == tcp_error ->
+    %% 告知 TCP 链路出现问题
     State#state.parent ! disconnected,
+    %% [Note] 为何此时停止定时器，如何保证此时一定有定定时器？
     catch gen_fsm:cancel_timer(State#state.timer),
     reconnect(),
     {next_state, not_connected, State#state{timer = none}};
@@ -179,6 +212,7 @@ terminate(_Reason, _Where, State) ->
 code_change(_OldVsn, Where, State, _Extra) ->
     {ok, Where, State}.
 
+%% 数据发送 + FSM 状态切换
 send(Bin, State, Where) -> 
     case gen_tcp:send(State#state.socket, [Bin, 0]) of
         ok ->
@@ -188,14 +222,20 @@ send(Bin, State, Where) ->
             {next_state, not_connected, State}
     end.
 
+%% Where -> 需要切换 FSM 到哪个状态，此处为 no_token
 ping(State, Where) ->
+    %% [Note] 写法
     Data = [<<"<regular-socket/>", 0>>, <<"PING">>],
     send(Data, State, Where).
-    
+
+%% 清空进程邮箱 + 随机延时发送 connect 事件
 reconnect() ->
     flush(),
+    %% [Note] 技巧
     gen_fsm:send_event_after(random:uniform(100), connect).
 
+%% [Note] 清空当前进程中的所有消息
+%% 哪些场景下需要这种实现
 flush() ->
     receive 
         _ ->

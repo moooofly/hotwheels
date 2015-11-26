@@ -66,7 +66,8 @@ stop(Barrier)
   when is_pid(Barrier) ->
     gen_server:cast(Barrier, {stop, self()}).
 
-%% 手动增加计数器的值以模拟 bot 数量的增长
+%% 增加计数器的值以记录当前处于特定状态下的 flashbot 数量
+%% 目前仅在 flashbot:not_subscribed 中被调用，即 subscribe 成功时
 bump(Barrier) ->
     gen_server:cast(Barrier, 'BUMP').
 
