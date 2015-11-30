@@ -34,17 +34,18 @@
 
 -record(state, {
           token,        %% 标识当前进程的随机十六进制字符串
-          parent,       %% janus_flash 进程 pid
+          parent,       %% transport 进程 pid
           send,         %% fun(Bin) -> gen_tcp:send(Socket, [Bin, 1]) end
-          heartbeat,
-          killswitch,
-          messages
+          heartbeat,    %% 心跳定时器 Ref
+          killswitch,   %% 未使用
+          messages      %% 缓存
          }).
 
 %% 在 mapper 中查找 Token 对应的 pid
 locate(Token) ->
     mapper:where(client_proxy_mapper, Token).
 
+%% 提取当前缓存的所有消息（提取后清空原有消息缓存）
 poll(Ref) ->
     gen_server:call(Ref, messages).
 
@@ -65,10 +66,10 @@ start(Send) ->
 stop(Ref) ->
     gen_server:cast(Ref, stop).
 
-%% Parent -> 为 janus_flash 进程 pid
+%% Parent -> 为 transport 进程 pid
 init([Token, Parent, Send]) ->
     process_flag(trap_exit, true),
-    %% 将当前进程 pid 以 token 作为标识保存到 ets 表中
+    %% 将当前 client_proxy 进程 pid 以 token 作为标识保存到 ets 表中
     ok = mapper:add(client_proxy_mapper, Token),
     State = #state{
         token = Token,
@@ -78,9 +79,16 @@ init([Token, Parent, Send]) ->
      },
    {ok, State}.
 
+%% 附着 
+%%
+%% Parent -> 收消息的进程
+%% Send   -> 发送消息的 socket 和方式
 handle_cast({attach, Parent, Send}, State) ->
     {noreply, State#state{parent = Parent, send = Send}};
 
+%%
+%% 分离
+%%
 handle_cast({detach, Who}, State) 
   when Who == State#state.parent ->
     %% transport is gone, session stays
@@ -90,11 +98,17 @@ handle_cast({detach, Who}, State)
 handle_cast({detach, _}, State) ->
     {noreply, State};
 
+%% 处理来自 flashbot 的 subscribe ，消息来自 janus_flash:process
+%% 将自身订阅到指定 Topic 上
 handle_cast({<<"subscribe">>, Topic}, State) ->
+    error_logger:info_msg("handle_cast => subscribe Pid(~p) to Topic(~p)~n", [self(), Topic]),
     topman:subscribe(self(), Topic),
     {noreply, State};
 
+%% 处理来自 flashbot 的 unsubscribe ，消息来自 janus_flash:process
+%% 将自身从指定 Topic 上取消订阅
 handle_cast({<<"unsubscribe">>, Topic}, State) ->
+    error_logger:info_msg("handle_cast => unsubscribe Pid(~p) from Topic(~p)~n", [self(), Topic]),
     topman:unsubscribe(self(), Topic),
     {noreply, State};
 
@@ -104,6 +118,7 @@ handle_cast(stop, State) ->
 handle_cast(Event, State) ->
     {stop, {unknown_cast, Event}, State}.
 
+%% 提取当前缓存的所有消息（提取后清空原有消息缓存）
 handle_call(messages, _From, State) ->
     State1 = start_heartbeat(State),
     {reply, State1#state.messages, State1#state{messages = []}};
@@ -111,14 +126,18 @@ handle_call(messages, _From, State) ->
 handle_call(Event, From, State) ->
     {stop, {unknown_call, Event, From}, State}.
 
+%% 收到来自 pubsub 针对特定 Topic 的广播消息
 handle_info({message, Msg}, State) 
   when is_pid(State#state.parent),
        is_binary(Msg) ->
     %% send immediately
     %% State#state.parent ! Event,
+    error_logger:info_msg("handle_info => recv {message, ~p} from pubsub, send to flashbot~n", [Msg]),
+    %% 通过 socket 发送订阅内容
     (State#state.send)(Msg), % to the socket!
     {noreply, start_heartbeat(State)};
 
+%% 待发送消息缓存（原本用于 parent 不存在的情况）
 handle_info({message, Msg}, State) ->
     %% buffer messages
     Messages1 = [Msg|State#state.messages],
@@ -126,15 +145,18 @@ handle_info({message, Msg}, State) ->
 
 handle_info(heartbeat, State) 
   when is_pid(State#state.parent) ->
+    error_logger:info_msg("handle_info => recv heartbeat and ! to parent(~p)~n", [State#state.parent]),
     State#state.parent ! heartbeat,
     {noreply, State};
 
 handle_info(heartbeat, State) ->
     %% no transport attached
     {noreply, State};
-    
+
+%% 收到来自 pubsub 的 topic 订阅成功应答
 handle_info(ack, State) 
   when is_pid(State#state.parent) ->
+    error_logger:info_msg("handle_info => recv subsribe-ack and ! to parent(~p)~n", [State#state.parent]),
     State#state.parent ! ack,
     {noreply, State};
 
@@ -159,9 +181,13 @@ code_change(_OldVsn, State, _Extra) ->
 cancel_heartbeat(State) ->
     catch erlang:cancel_timer(State#state.heartbeat),
     State#state{heartbeat = undefined}.
-    
+
+%% 更新 heartbeat 定时器
 start_heartbeat(State) ->
+    error_logger:info_msg("start_heartbeat => update heartbeat timer!~n"),
     Timer = erlang:send_after(?HEARTBEAT, self(), heartbeat),
+    %% 取消之前的 heartbeat 定时器
     State1 = cancel_heartbeat(State),
+    %% 更新为新的定时器
     State1#state{heartbeat = Timer}.
 

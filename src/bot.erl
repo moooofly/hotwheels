@@ -111,7 +111,7 @@ wait(State, N, M)
     receive
         connected ->    %% flashbot 与 janus 成功建立 TCP 连接
             wait(State, N + 1, M);
-        disconnected -> %% flashbot 与 janus 之前的 TCP 连接出现问题
+        disconnected -> %% flashbot 与 janus 之间的 TCP 连接出现问题
             wait(State, N - 1, M);
         subscribing ->  %% 订阅发起中
             wait(State, N, M + 1);

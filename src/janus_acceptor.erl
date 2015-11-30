@@ -26,12 +26,9 @@
 %% 3. 为每个连接上的 client 在 janus_transport_sup 下动态创建一个 transport 进程进行处理
 %%
 
-
-
 -module(janus_acceptor).
 
 -export([start_link/3]).
-
 -export([acceptor_init/3, acceptor_loop/1]).
 
 -record(state, {
@@ -102,11 +99,14 @@ acceptor_loop(State) ->
 
 
 handle_connection(State, Socket) ->
-    %% 启动 用于处理客户端连接 的进程
+    %% 在 janus_transport_sup 下动态创建 transport 进程用于处理客户端连接
     {ok, Pid} = janus_app:start_transport(State#state.port),
     ok = gen_tcp:controlling_process(Socket, Pid),
+    error_logger:info_msg("handle_connection => accept client socket(~p), create transport(~p)~n", [Socket, Pid]),
     %% Instruct the new handler to own the socket.
-    %% 同步控制
+    %% 同步控制，告知底层模块可以基于该 socket 进行数据收发了
+    %% 调用序列如下
+    %%     transport:set_socket -> janus_flash:start -> client_proxy:start
     (State#state.module):set_socket(Pid, Socket).
 
 handle_error(timeout) ->

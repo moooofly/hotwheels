@@ -37,6 +37,8 @@
          }).
 
 %% 只有 publish 采用广播
+%% [Note] 这里采用 abcast 的深层原因
+%% 参考：http://stackoverflow.com/questions/31541856/confusion-regarding-abcast-function-and-uniqueness-of-gen-server-names
 publish(Msg, Topic) 
   when is_binary(Topic) ->
     gen_server:abcast(?MODULE, {publish, Msg, Topic});
@@ -45,7 +47,7 @@ publish(Msg, Topic)
   when is_list(Topic) ->
     publish(Msg, list_to_binary(Topic)).
 
-%% Pid -> 发起订阅的进程 pid ，即对应客户端连接的 client_proxy 进程
+%% Pid -> 发起订阅的进程，即 client_proxy 进程 pid
 subscribe(Pid, Topic) 
   when is_binary(Topic) ->
     gen_server:cast(?MODULE, {subscribe, Pid, Topic});
@@ -79,7 +81,10 @@ init([]) ->
 handle_cast(stop, State) ->
     {stop, normal, State};
 
+%% Pid -> client_proxy 进程 pid
 handle_cast({subscribe, Pid, Topic}, State) ->
+    %% 找到与指定 Topic 关联的 pubsub 进程
+    %% Srv -> pubsub 进程 pid
     {Srv, State1} = ensure_server(Topic, State),
     pubsub:subscribe(Srv, Pid),
     {noreply, State1};
@@ -130,7 +135,7 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-%% 确保有 pubsub 进程关联到指定 Topic
+%% 确保有 pubsub 进程关联到指定 Topic ，返回对应指定 Topic 的 pubsub 进程 pid
 ensure_server(Topic, State) ->
     Xref = State#state.topic_xref,
     case dict:find(Topic, Xref) of

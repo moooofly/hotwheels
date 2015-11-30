@@ -30,13 +30,16 @@
 -record(state, {
           topic,                        %% 当前 pubsub 进程负责处理的 topic
           subs = ets:new(subs, [set])   %% {Key, Value} -> {Pid, Ref}
-         }).                            %% Pid -> 订阅进程 pid ；Ref -> monitor(Pid)
+         }).                            %% Pid -> 订阅当前 topic 的 client_proxy 进程 pid
+                                        %% Ref -> monitor(Pid)
 
 %% 发布（广播消息给所有订阅者）
 publish(Ref, Msg) ->
     gen_server:cast(Ref, {publish, Msg}).
 
 %% 订阅
+%% Ref -> 维护特定 Topic 的 pubsub 进程 pid
+%% Pid -> client_proxy 进程 pid
 subscribe(Ref, Pid) ->
     gen_server:cast(Ref, {subscribe, Pid}).
 
@@ -57,10 +60,12 @@ init([Topic]) ->
 handle_cast(stop, State) ->
     {stop, normal, State};
 
-%% Pid -> 定于当前 topic 的进程 pid (client_proxy)
+%% Pid -> 订阅当前 topic 的进程 pid (client_proxy)
 handle_cast({subscribe, Pid}, State) ->
     %% automatically unsubscribe when dead
     Ref = erlang:monitor(process, Pid),
+    error_logger:info_msg("handle_cast => recv {subscribe, ~p} and ! to ~p ack~n", [Pid, Pid]),
+    %% 告知订阅成功
     Pid ! ack,
     ets:insert(State#state.subs, {Pid, Ref}),
     {noreply, State};
@@ -76,7 +81,7 @@ handle_cast({publish, Msg}, State) ->
     TS = tuple_to_list(Start),
     JSON = {struct, [{<<"timestamp">>, TS}|L]},
     Msg1 = {message, iolist_to_binary(mochijson2:encode(JSON))},
-    %% 广播给所有订阅的进程（内部临时调高进程优先级）
+    %% 广播给所有订阅当前 topic 的 client_proxy 进程（内部临时调高进程优先级）
     F = fun({Pid, _Ref}, _) -> Pid ! Msg1 end,
     erlang:process_flag(priority, high),
     ets:foldr(F, ignore, State#state.subs),

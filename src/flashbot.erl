@@ -39,7 +39,7 @@
           parent,       %% 调用发起者 pid ，即调用 bot:test/1,2,4 的进程
           host,         %% janus 的监听地址
           port,         %% janus 的监听端口
-          token,        %% janus 生成随机十六进制字符串，用于标识 topic
+          token,        %% janus 生成随机十六进制字符串，用于标识 client_proxy
           start,        %% 收到 subscribe ack 的时刻
           timer,        %% 用于延时停止当前 flashbot 的定时器
           barrier,      %% counter barrier
@@ -77,7 +77,8 @@ not_connected(connect, State) ->
         {ok, Sock} ->
             %% 告知 TCP 建链成功
             State#state.parent ! connected,
-            %% 获取订阅 token
+            %% 获取用于标识 client_proxy 的 token
+            %% 此处保证了先发送 PING 后处理 token 的逻辑
             ping(State#state{socket = Sock}, no_token);
         _ ->
             reconnect(),
@@ -156,7 +157,7 @@ handle_info({tcp, Sock, Bin}, Where, State)
     State1 = State#state{data = undefined},
     ?MODULE:handle_info({tcp, Sock, Bin1}, Where, State1);
 
-%% 收到 ACK
+%% 收到订阅成功 ACK
 handle_info({tcp, Sock, <<"ACK", 1>>}, Where, State) ->
     inet:setopts(Sock, [{active, once}]),
     %% 此处 Where 只能是 not_subscribed
