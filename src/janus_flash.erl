@@ -28,7 +28,7 @@ start(Socket) ->
         proxy = Proxy, 
         token = Token
      },
-    error_logger:info_msg("start => send <<\"timestamp\">> and <<\"token\">>~n", []),
+    error_logger:info_msg("janus_flash:start => send <<\"timestamp\">> and <<\"token\">>~n", []),
     JSON = {struct,
                 [{<<"timestamp">>, tuple_to_list(now())},
                  {<<"token">>, Token}
@@ -52,29 +52,30 @@ process(heartbeat, State) ->
 
 %% 来自 client_proxy 的 "!" ，对应订阅成功应答
 process(ack, State) ->
+    error_logger:info_msg("janus_flash:process => send ACK to flashbot~n", []),
     send(<<"ACK">>, State);
 
 process(<<>>, State) ->
-    error_logger:info_msg("process => no more data~n", []),
+    error_logger:info_msg("janus_flash:process => no more data~n", []),
     {ok, keep_alive, State};
 
 %% 处理尚有缓存数据的情况
 process(Bin, State) 
   when is_binary(State#state.data),
        is_binary(Bin) ->
-    error_logger:info_msg("process => with buffer-data~n", []),
+    error_logger:info_msg("janus_flash:process => with buffer-data~n", []),
     process(list_to_binary([State#state.data, Bin]),
             State#state{data = undefined});
 
 %% 处理带 "<regular-socket/>" 头的情况
 process(<<"<regular-socket/>", 0, Bin/binary>>, State) ->
-    error_logger:info_msg("process => with head~n", []),
+    error_logger:info_msg("janus_flash:process => with head~n", []),
     process(Bin, State);
 
 %% 处理没有缓存数据的情况
 process(Bin, State) 
   when is_binary(Bin) ->
-    error_logger:info_msg("process => without buffer-data, Bin = ~p~n", [Bin]),
+    error_logger:info_msg("janus_flash:process => without buffer-data, Bin = ~p~n", [Bin]),
     process(bin:split("\\000", Bin), State);
 
 process({more, Bin}, State) ->
@@ -88,7 +89,7 @@ process({ok, <<>>, Rest}, State) ->
 
 %% 收到来自 flashbot 的 PING
 process({ok, <<"PING">>, Rest}, State) ->
-    error_logger:info_msg("process => recv PING from flashbot~n", []),
+    error_logger:info_msg("janus_flash:process => recv PING from flashbot~n", []),
     process(Rest, State);
 
 process({ok, <<"PONG">>, Rest}, State) ->
@@ -101,7 +102,7 @@ process({ok, <<"PUBLISH">>, Rest}, State) ->
                      {<<"message_id">>, _},
                      {<<"data">>, _}
                     ]} = mochijson2:decode(Rest),
-    error_logger:info_msg("process => recv PUBLISH from flashbot, topman job begin(Topic:~p)~n", [Topic]),
+    error_logger:info_msg("janus_flash:process => recv PUBLISH from flashbot, topman start to publish(Topic:~p)~n", [Topic]),
     %% 向指定 Topic 进行 publish
     topman:publish(JSON, Topic),
     {ok, shutdown, State};
@@ -112,6 +113,7 @@ process({ok, Bin, Rest}, State) ->
         [{<<"action">>, Action}, 
          {<<"data">>, Topic}
      ]} = mochijson2:decode(Bin),
+     error_logger:info_msg("janus_flash:process => get Action(~p) on Data(~p), cast to client_proxy~n", [Action, Topic]),
     %% 发送 subscribe 或 unsubscribe 给 client_proxy
     gen_server:cast(State#state.proxy, {Action, Topic}),
     process(Rest, State).

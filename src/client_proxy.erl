@@ -101,14 +101,14 @@ handle_cast({detach, _}, State) ->
 %% 处理来自 flashbot 的 subscribe ，消息来自 janus_flash:process
 %% 将自身订阅到指定 Topic 上
 handle_cast({<<"subscribe">>, Topic}, State) ->
-    error_logger:info_msg("handle_cast => subscribe Pid(~p) to Topic(~p)~n", [self(), Topic]),
+    error_logger:info_msg("client_proxy:handle_cast => subscribe Self(~p) to Topic(~p)~n", [self(), Topic]),
     topman:subscribe(self(), Topic),
     {noreply, State};
 
 %% 处理来自 flashbot 的 unsubscribe ，消息来自 janus_flash:process
 %% 将自身从指定 Topic 上取消订阅
 handle_cast({<<"unsubscribe">>, Topic}, State) ->
-    error_logger:info_msg("handle_cast => unsubscribe Pid(~p) from Topic(~p)~n", [self(), Topic]),
+    error_logger:info_msg("client_proxy:handle_cast => unsubscribe Pid(~p) from Topic(~p)~n", [self(), Topic]),
     topman:unsubscribe(self(), Topic),
     {noreply, State};
 
@@ -132,7 +132,7 @@ handle_info({message, Msg}, State)
        is_binary(Msg) ->
     %% send immediately
     %% State#state.parent ! Event,
-    error_logger:info_msg("handle_info => recv {message, ~p} from pubsub, send to flashbot~n", [Msg]),
+    error_logger:info_msg("client_proxy:handle_info => recv {message, ~p} from pubsub, send to flashbot~n", [Msg]),
     %% 通过 socket 发送订阅内容
     (State#state.send)(Msg), % to the socket!
     {noreply, start_heartbeat(State)};
@@ -145,7 +145,7 @@ handle_info({message, Msg}, State) ->
 
 handle_info(heartbeat, State) 
   when is_pid(State#state.parent) ->
-    error_logger:info_msg("handle_info => recv heartbeat and ! to parent(~p)~n", [State#state.parent]),
+    error_logger:info_msg("client_proxy:handle_info => recv heartbeat and ! to transport(~p)~n", [State#state.parent]),
     State#state.parent ! heartbeat,
     {noreply, State};
 
@@ -156,7 +156,7 @@ handle_info(heartbeat, State) ->
 %% 收到来自 pubsub 的 topic 订阅成功应答
 handle_info(ack, State) 
   when is_pid(State#state.parent) ->
-    error_logger:info_msg("handle_info => recv subsribe-ack and ! to parent(~p)~n", [State#state.parent]),
+    error_logger:info_msg("client_proxy:handle_info => recv subsribe-ack from pubsub and ! to transport(~p)~n", [State#state.parent]),
     State#state.parent ! ack,
     {noreply, State};
 
@@ -184,7 +184,7 @@ cancel_heartbeat(State) ->
 
 %% 更新 heartbeat 定时器
 start_heartbeat(State) ->
-    error_logger:info_msg("start_heartbeat => update heartbeat timer!~n"),
+    error_logger:info_msg("client_proxy:start_heartbeat => update heartbeat timer!~n"),
     Timer = erlang:send_after(?HEARTBEAT, self(), heartbeat),
     %% 取消之前的 heartbeat 定时器
     State1 = cancel_heartbeat(State),

@@ -83,9 +83,9 @@ handle_cast(stop, State) ->
 
 %% Pid -> client_proxy 进程 pid
 handle_cast({subscribe, Pid, Topic}, State) ->
-    %% 找到与指定 Topic 关联的 pubsub 进程
-    %% Srv -> pubsub 进程 pid
+    %% Srv -> 与 Topic 关联的 pubsub 进程 pid
     {Srv, State1} = ensure_server(Topic, State),
+    %% 将 client_proxy 进程 pid “注册”到与 Topic 关联的 pubsub 进程中
     pubsub:subscribe(Srv, Pid),
     {noreply, State1};
 
@@ -135,7 +135,9 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-%% 确保有 pubsub 进程关联到指定 Topic ，返回对应指定 Topic 的 pubsub 进程 pid
+%% 找到与指定 Topic 关联的 pubsub 进程 pid
+%% 该函数会确保有 pubsub 进程与指定 Topic 关联
+%% 并返回与指定 Topic 关联的 pubsub 进程 pid
 ensure_server(Topic, State) ->
     Xref = State#state.topic_xref,
     case dict:find(Topic, Xref) of
