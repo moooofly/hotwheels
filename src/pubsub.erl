@@ -50,7 +50,7 @@ publish(Ref, Msg) ->
 subscribe(Ref, Pid) ->
     gen_server:cast(Ref, {subscribe, Pid}).
 
-%% 去订阅
+%% 取消订阅
 unsubscribe(Ref, Pid) ->
     gen_server:cast(Ref, {unsubscribe, Pid}).
 

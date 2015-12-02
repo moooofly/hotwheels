@@ -31,7 +31,7 @@
           port,
           socket,       %% client socket
           transport,    %% 目前为 janus_flash
-          state
+          state         %% 用于保存 janus_flash 中定义的 state 值
          }).
 
 %% janus_acceptor 通过此接口进行 socket 控制权转移的同步告知
@@ -114,6 +114,7 @@ handle_info(Info, State) ->
 terminate(_Reason, State) 
   when State#state.transport /= undefined ->
     Mod = State#state.transport,
+    %% 调用 janus_flash:stop
     Mod:stop(State#state.state),
     ok.
 
