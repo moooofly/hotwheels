@@ -1,6 +1,5 @@
 LOAD_PATH = \
 	ebin \
-	mochiweb/ebin \
 	$(NULL)
 
 MNESIA_DIR = /tmp/janus.db

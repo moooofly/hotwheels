@@ -1,6 +1,8 @@
 .tags
 .tags_sorted_by_file
+.gitignore
 erl_crash.dump
 ebin/*.beam
 ebin/janus.boot
 ebin/janus.script
+priv/*
