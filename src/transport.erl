@@ -56,7 +56,7 @@ handle_cast({set_socket, Socket}, State) ->
     inet:setopts(Socket, [{active, once},
                           {packet, 0},
                           binary]),
-    error_logger:info_msg("transport:handle_cast => recv {set_socket, Socket}, call janus_flash:start~n", []),
+    error_logger:info_msg("[transport] handle_cast => recv {set_socket, Socket}, call janus_flash:start~n", []),
     %% 调用 janus_flash:start
     {ok, Keep, Ref} = (State#state.transport):start(Socket),
     keep_alive_or_close(Keep, State#state{socket = Socket, state = Ref});
@@ -73,7 +73,7 @@ handle_call(Event, From, State) ->
 %% 收到针对订阅 Topic 的广播消息，通过 socket 直接发送给客户端
 handle_info({message, Msg}, State) ->
     Mod = State#state.transport,
-    error_logger:info_msg("transport:handle_info => recv {message, ~p}, call janus_flash:forward~n", [Msg]),
+    error_logger:info_msg("[transport] handle_info => recv {message, ~p}, call janus_flash:forward~n", [Msg]),
     %% 调用 janus_flash:forward
     {ok, Keep, TS} = Mod:forward(Msg, State#state.state),
     keep_alive_or_close(Keep, State#state{state = TS});
@@ -91,7 +91,15 @@ handle_info({tcp_closed, Socket}, State)
 handle_info({tcp, Socket, <<"<regular-socket/>", 0, Bin/binary>>}, State)
   when Socket == State#state.socket ->
     inet:setopts(Socket, [{active, once}]),
-    error_logger:info_msg("transport:handle_info => recv Bin(~p), dispatch~n", [Bin]),
+    error_logger:info_msg("[transport] handle_info => recv Bin(~p) with <regular-socket/>, dispatch~n", [Bin]),
+    dispatch(Bin, janus_flash, State);
+
+%% [Note] new
+%% 处理不带 "<regular-socket/>" 头的数据
+handle_info({tcp, Socket, <<Bin/binary>>}, State)
+  when Socket == State#state.socket ->
+    inet:setopts(Socket, [{active, once}]),
+    error_logger:info_msg("[transport] handle_info => recv Bin(~p) without <regular-socket/>, dispatch~n", [Bin]),
     dispatch(Bin, janus_flash, State);
 
 handle_info({'EXIT', _, _}, State) ->
@@ -99,11 +107,12 @@ handle_info({'EXIT', _, _}, State) ->
     {noreply, State};
 
 %% 处理
-%% 1.没有 "<regular-socket/>" 头的、来自 client socket 的数据
+%% 1.没有 "<regular-socket/>" 头的、来自 client socket 的数据（新增上面的分支后，该说明已废）
 %% 2.来自 client_proxy 进程、通过 ! 发送的 heartbeat 和 ack 消息
 handle_info(Info, State) 
   when State#state.transport /= undefined ->
     Mod = State#state.transport,
+
     %% 调用 janus_flash:process
     {ok, Keep, TS} = Mod:process(Info, State#state.state),
     keep_alive_or_close(Keep, State#state{state = TS});
@@ -127,6 +136,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% [Note] 设计意图 采用不同 Mod 处理不同数据
 dispatch(Data, Mod, State = #state{transport = Mod}) ->
+    %% 调用 janus_flash:process
     {ok, Keep, TS} = Mod:process(Data, State#state.state),
     keep_alive_or_close(Keep, State#state{state = TS}).
 
