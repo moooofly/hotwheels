@@ -1,9 +1,9 @@
-{release, {"Janus","0.0.1"}, {erts, "6.0"}, 
- [{kernel,"3.0"}, 
+{release, {"Janus","0.0.1"}, {erts, "6.0"},
+ [{kernel,"3.0"},
   {stdlib,"2.0"},
   {mnesia, "4.12"},
   {sasl, "2.4"},
   {os_mon, "2.2.15"},
   {inets, "5.10"},
   {janus,"0.0.1"}
- ]}. 
+ ]}.

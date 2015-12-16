@@ -25,13 +25,13 @@
              util,
              mochijson2
             ]},
-  {registered, [janus_sup, 
+  {registered, [janus_sup,
                 janus_topman_sup,
                 janus_proxy_mapper_sup,
                 janus_transport_sup,
                 janus_listener]},
-  {applications, [kernel, 
-                  stdlib, 
+  {applications, [kernel,
+                  stdlib,
                   mnesia,
                   inets
                  ]},
