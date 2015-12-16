@@ -71,7 +71,7 @@ handle_cast(stop, State) ->
 handle_cast({subscribe, Pid}, State) ->
     %% automatically unsubscribe when dead
     Ref = erlang:monitor(process, Pid),
-    error_logger:info_msg("pubsub:handle_cast => recv {subscribe, ~p} to Topic(~p) and ! to client_proxy(~p) ack~n", 
+    error_logger:info_msg("[pubsub] handle_cast => recv {subscribe, ~p} to Topic(~p) and ! to client_proxy(~p) ack~n", 
         [Pid, State#state.topic, Pid]),
     %% 告知订阅成功
     Pid ! ack,
@@ -83,8 +83,11 @@ handle_cast({unsubscribe, Pid}, State) ->
 
 handle_cast({publish, Msg}, State) ->
     %% 这里通过 io:format/2 输出打印，而没有通过 error_logger:xxx 输出，应该是因为速度问题
-    %%io:format("pubsub:handle_cast => recv {publish, Msg}~nets:info(subs): ~p~n", [ets:info(State#state.subs)]),
-    error_logger:info_msg("pubsub:handle_cast => recv {publish, Msg}~nets:info(subs): ~p~n", [ets:info(State#state.subs)]),
+    %%io:format("[pubsub] handle_cast => recv {publish, Msg}~nets:info(subs): ~p~n", [ets:info(State#state.subs)]),
+    %%error_logger:info_msg("[pubsub] handle_cast => recv {publish, Msg}~nets:info(subs): ~p~n", [ets:info(State#state.subs)]),
+
+    error_logger:info_msg("[pubsub] handle_cast => recv {publish, ~p}~n", [Msg]),
+
     %% 为 Msg 内容添加时间戳
     Start = now(),
     {struct, L} = Msg,
@@ -96,10 +99,10 @@ handle_cast({publish, Msg}, State) ->
     %% [Note]
     erlang:process_flag(priority, high),
     ets:foldr(F, ignore, State#state.subs),
-    End = now(),
+    %%End = now(),
     erlang:process_flag(priority, normal),
     %%io:format("time: ~p~n", [timer:now_diff(End, Start) / 1000]),
-    error_logger:info_msg("time: ~p~n", [timer:now_diff(End, Start) / 1000]),
+    %%error_logger:info_msg("time: ~p~n", [timer:now_diff(End, Start) / 1000]),
     {noreply, State};
 
 handle_cast(Event, State) ->
