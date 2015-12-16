@@ -62,6 +62,12 @@ sh: compile
 sh1: compile 
 	erl $(LOCAL_OPTS) -sname debug1 -remsh $(NODE)
 
+pas: compile 
+	erl $(LOCAL_OPTS) -sname pas_test 
+
+ns: compile 
+	erl $(LOCAL_OPTS) -sname ns_test
+
 clean:
 	rm -rf ebin/*.beam
 	rm -fr $(MNESIA_DIR)
