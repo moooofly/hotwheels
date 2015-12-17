@@ -90,7 +90,7 @@ no_token({struct, [{<<"token">>, Token}]}, State) ->
     %% 告知 subscribe 发起中
     State#state.parent ! subscribing,
     JSON = mochijson2:encode({struct, [{action, <<"subscribe">>},
-                                       {data, <<"events">>}
+                                       {topic, <<"events">>}
                                       ]}),
     Data = [<<"<regular-socket/>">>, 0, JSON],
     %% 发起订阅
@@ -124,7 +124,7 @@ subscribed(Expected, State)
     %% 告知收到订阅消息
     State#state.parent ! {success, State#state.latency},
     JSON = mochijson2:encode({struct, [{action, <<"unsubscribe">>},
-                                       {data, <<"events">>}]}),
+                                       {topic, <<"events">>}]}),
     Data = [<<"<regular-socket/>">>, 0, JSON],
     %% 取消订阅
     send(Data, State, subscribed),

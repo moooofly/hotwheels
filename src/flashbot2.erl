@@ -98,7 +98,7 @@ no_token({struct, [{<<"token">>, Token}]}, #state{topic=Topic}=State) ->
     %% 告知 subscribe 发起中
     State#state.parent ! subscribing,
     JSON = mochijson2:encode({struct, [{action, <<"subscribe">>},
-                                       {data, Topic}
+                                       {topic, Topic}
                                       ]}),
     Data = [<<"<regular-socket/>">>, 0, JSON],
     %% 发起订阅

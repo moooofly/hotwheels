@@ -133,7 +133,7 @@ handle_info({message, Msg}, State)
     %% send immediately
     %% State#state.parent ! Event,
     error_logger:info_msg("[client_proxy] handle_info => recv {message, ~p} from pubsub, send to flashbot~n", [Msg]),
-    %% 通过 socket 发送订阅内容
+    %% 通过 socket 发布推送消息
     (State#state.send)(Msg),
     %% 启动 30s 定时器，当推送后的 30s 内没有新消息需要推送，则触发 PING 发送
     {noreply, start_heartbeat(State)};

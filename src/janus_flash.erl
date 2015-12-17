@@ -60,6 +60,11 @@ process(<<>>, State) ->
     error_logger:info_msg("[janus_flash] process => no more data~n", []),
     {ok, keep_alive, State};
 
+%% 处理带 "<regular-socket/>" 头的情况
+process(<<"<regular-socket/>", 0, Bin/binary>>, State) ->
+    error_logger:info_msg("[janus_flash] process => with head~n", []),
+    process(Bin, State);
+
 %% 处理尚有缓存数据的情况
 process(Bin, State) 
   when is_binary(State#state.data),
@@ -67,11 +72,6 @@ process(Bin, State)
     error_logger:info_msg("[janus_flash] process => with buffer-data~n", []),
     process(list_to_binary([State#state.data, Bin]),
             State#state{data = undefined});
-
-%% 处理带 "<regular-socket/>" 头的情况
-process(<<"<regular-socket/>", 0, Bin/binary>>, State) ->
-    error_logger:info_msg("[janus_flash] process => with head~n", []),
-    process(Bin, State);
 
 %% 处理没有缓存数据的情况
 process(Bin, State) 
@@ -105,7 +105,7 @@ process({ok, <<"PUBLISH">>, Rest}, State) ->
                      {<<"message_id">>, _},
                      {<<"data">>, _}
                     ]} = mochijson2:decode(Rest),
-    error_logger:info_msg("[janus_flash] process => recv PUBLISH from flashbot, topman start to publish(Topic:~p)~n", [Topic]),
+    error_logger:info_msg("[janus_flash] process => recv PUBLISH, topman start to publish(Topic:~p)~n", [Topic]),
     %% 向指定 Topic 进行 publish
     topman:publish(JSON, Topic),
     {ok, shutdown, State};
@@ -114,7 +114,7 @@ process({ok, <<"PUBLISH">>, Rest}, State) ->
 process({ok, Bin, Rest}, State) ->
     {struct,
         [{<<"action">>, Action}, 
-         {<<"data">>, Topic}
+         {<<"topic">>, Topic}
      ]} = mochijson2:decode(Bin),
      error_logger:info_msg("[janus_flash] process => get Action(~p) on Data(~p), cast to client_proxy~n", [Action, Topic]),
     %% 发送 subscribe 或 unsubscribe 给 client_proxy
