@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="UTF-8">
+    <title>Hotwheels by moooofly</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" type="text/css" href="stylesheets/normalize.css" media="screen">
+    <link href='https://fonts.googleapis.com/css?family=Open+Sans:400,700' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" type="text/css" href="stylesheets/stylesheet.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="stylesheets/github-light.css" media="screen">
+  </head>
+  <body>
+    <section class="page-header">
+      <h1 class="project-name">Hotwheels</h1>
+      <h2 class="project-tagline">Erlang messaging server optimized to send 1 message to 40k subscribers to a topic in &lt; 1s</h2>
+      <a href="https://github.com/moooofly/hotwheels" class="btn">View on GitHub</a>
+      <a href="https://github.com/moooofly/hotwheels/zipball/master" class="btn">Download .zip</a>
+      <a href="https://github.com/moooofly/hotwheels/tarball/master" class="btn">Download .tar.gz</a>
+    </section>
+
+    <section class="main-content">
+      <hr>
+
+<blockquote>
+<p><strong>关于 Janus 的历史</strong></p>
+
+<p>在罗马神话中 Janus 是天门神，早晨打开天门，让阳光普照人间，晚上又把天门关上，使黑暗降临大地。他的头部前后各有一副面孔，同时看着两个不同方向，一副看着过去，一副看着未来，因此也称两面神，或被尊称为时间之神。罗马有好几座 Janus 神庙。Janus 掌管所有的出入门户，因此罗马人在战时永远将 Janus 神殿的门敞开着，以便军人在败阵时躲入殿内以求庇护，或是在战胜时凯旋入殿。早期的 Janus 神像的两副面孔都有胡子，后来没有胡子，但是一副面孔年轻，另一副面孔年老。Janus 的右手指上刻有数字 CCC（300），左手指上刻着数字 LXV（65），合在一起恰是一年的天数。从纪元前 1 世纪起，罗马人把祭祀 Janus 的节日和新年结合在一起。罗马的执政官也在元旦这一天就职，并向 Janus 献祭，祈求国家的安宁。为了纪念 Janus，罗马人把正月称为 Januarius（mensis），意含“Janus 之月”，英文借用了该词，先作 Januarie，后作 January 。而在英文吸收 January 一词之前，撒克逊人把正月叫作 Wulf-Monath（wolf-month），意为“狼月”，因为此时正值严冬，是狼群出没村子寻觅食物的时节。</p>
+</blockquote>
+
+<hr>
+
+<h2>
+<a id="监督树总体结构" class="anchor" href="#%E7%9B%91%E7%9D%A3%E6%A0%91%E6%80%BB%E4%BD%93%E7%BB%93%E6%9E%84" aria-hidden="true"><span class="octicon octicon-link"></span></a>监督树总体结构</h2>
+
+<pre><code>                                                      |
+                                                   janus_app
+                                                      |
+                                                      | (one_for_one)
+               +-------------------+------------------+--------------------+
+               |                   |                  |                    |
+               |                   |                  |                    |
+             topman          janus_acceptor      (supervisor)            mapper
+               |                                      |
+               |                                      | (simple_one_for_one)
+      +--------+-------|                     +--------+-------+
+      |        |       |                     |        |       |
+      |        |       |                     |        |       |
+   pubsub     ...   pubsub                  ...   transport  ...
+(topic:&lt;&lt;"T1"&gt;&gt;)  (topic:&lt;&lt;"T2"&gt;&gt;)                    |
+                                                      | (janus_flash 封装层)
+                                                      |
+                                                 client_proxy
+
+</code></pre>
+
+<h2>
+<a id="subscriber-行为" class="anchor" href="#subscriber-%E8%A1%8C%E4%B8%BA" aria-hidden="true"><span class="octicon octicon-link"></span></a>subscriber 行为</h2>
+
+<pre lang="sequence"><code>title: 订阅者行为
+subscriber(flashbot)--&gt;janus: ...TCP setup...
+Note right of janus: a. janus_acceptor 创建 transport 进程
+Note right of janus: b. 进而创建 client_proxy 进程
+Note right of janus: c. 发送成功创建 client_proxy 的时间戳和 token 标识
+janus-&gt;subscriber(flashbot): {timestamp:xxx, token:yyy},1
+subscriber(flashbot)-&gt;janus: &lt;regular-socket/&gt;,0,PING,0
+subscriber(flashbot)-&gt;janus: &lt;regular-socket/&gt;,0,{action:subscribe, data:events},0
+Note right of janus: 内部经过 
+Note right of janus: transport -&gt;client_proxy -&gt; topman -&gt; pubsub
+Note right of janus: 的处理，最终回复 subscribe 成功的 ack
+janus-&gt;subscriber(flashbot): ACK,1
+</code></pre>
+
+<h3>
+<a id="janus-针对-subscribe-的内部处理" class="anchor" href="#janus-%E9%92%88%E5%AF%B9-subscribe-%E7%9A%84%E5%86%85%E9%83%A8%E5%A4%84%E7%90%86" aria-hidden="true"><span class="octicon octicon-link"></span></a>janus 针对 subscribe 的内部处理</h3>
+
+<pre lang="sequence"><code>title: xxx
+subscriber--&gt;transport: ...TCP setup...
+subscriber-&gt;transport: ...{action:subscribe, data:Topic}...
+transport-&gt;client_proxy: cast {Action, Topic}
+client_proxy-&gt;topman: topman:subscribe(CProxyPid,Topic)
+topman-&gt;topman: cast {subscribe, CProxyPid, Topic}
+Note right of topman: [...
+Note right of topman: 在没有与 Topic 关联的 pubsub 进程时，才有如下三步
+topman--&gt;pubsub: pubsub:start(Topic)
+pubsub--&gt;pubsub: 关联 Topic
+topman--&gt;pubsub: monitor
+Note right of topman: ...] 
+topman-&gt;pubsub: pubsub:subscribe(PSPid, CProxyPid)
+pubsub-&gt;pubsub: cast {subscribe, CProxyPid}
+pubsub-&gt;client_proxy: monitor
+pubsub-&gt;client_proxy: ack
+client_proxy-&gt;transport: ack
+transport-&gt;subscriber: ACK,1
+</code></pre>
+
+<h2>
+<a id="publisher-行为" class="anchor" href="#publisher-%E8%A1%8C%E4%B8%BA" aria-hidden="true"><span class="octicon octicon-link"></span></a>publisher 行为</h2>
+
+<pre lang="sequence"><code>title: 发布者行为
+subscriber(flashbot)--&gt;janus: ...TCP setup...
+publisher(flashbot)--&gt;janus: ...TCP setup...
+publisher(flashbot)-&gt;janus: &lt;regular-socket/&gt;,0,PUBLISH,0,{topic:xxx,event:xxx,message_id:xxx,data:xxx}
+Note right of janus: 内部经过
+Note right of janus: transport -&gt; topman -&gt; pubsub -&gt; client_proxy
+Note right of janus: 的处理，最终将消息推送给 subscriber
+janus-&gt;subscriber(flashbot): {timestamp:xxx, topic:Topic},1
+Note right of janus: 在 publish 后，启动 30s 定时器
+Note right of janus: 在 30s 内若没有新内容需要 publish，则触发 PING 发送
+janus-&gt;subscriber(flashbot): PING,1
+subscriber(flashbot)-&gt;janus: PONG,0
+</code></pre>
+
+<h3>
+<a id="janus-针对-publish-的内部处理" class="anchor" href="#janus-%E9%92%88%E5%AF%B9-publish-%E7%9A%84%E5%86%85%E9%83%A8%E5%A4%84%E7%90%86" aria-hidden="true"><span class="octicon octicon-link"></span></a>janus 针对 publish 的内部处理</h3>
+
+<pre lang="sequence"><code>title: xxx
+publisher--&gt;transport: ...TCP setup...
+publisher-&gt;transport: ...PUBLISH,0,{topic:Topic,...}...
+transport-&gt;topman: topman:publish(Msg, Topic)
+topman-&gt;topman: abcast {publish, Msg, Topic}
+Note right of topman: [...
+Note right of topman: 在没有与 Topic 关联的 pubsub 进程时，才有如下三步
+topman--&gt;pubsub: pubsub:start(Topic)
+pubsub--&gt;pubsub: 关联 Topic
+topman--&gt;pubsub: monitor
+Note right of topman: ...] 
+topman-&gt;pubsub: pubsub:publish(PSPid, Msg)
+pubsub-&gt;pubsub: cast {publish, Msg}
+
+pubsub-&gt;client_proxy_n: {message,Msg_1}
+client_proxy_n-&gt;subscriber_n: {timestamp:xx, topic:Topic,...},1
+
+
+</code></pre>
+
+      <footer class="site-footer">
+        <span class="site-footer-owner"><a href="https://github.com/moooofly/hotwheels">Hotwheels</a> is maintained by <a href="https://github.com/moooofly">moooofly</a>.</span>
+
+        <span class="site-footer-credits">This page was generated by <a href="https://pages.github.com">GitHub Pages</a> using the <a href="https://github.com/jasonlong/cayman-theme">Cayman theme</a> by <a href="https://twitter.com/jasonlong">Jason Long</a>.</span>
+      </footer>
+
+    </section>
+
+  
+  </body>
+</html>
