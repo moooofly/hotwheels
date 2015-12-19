@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="UTF-8">
+    <title>Hotwheels by moooofly</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" type="text/css" href="stylesheets/normalize.css" media="screen">
+    <link href='https://fonts.googleapis.com/css?family=Open+Sans:400,700' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" type="text/css" href="stylesheets/stylesheet.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="stylesheets/github-light.css" media="screen">
+  </head>
+  <body>
+    <section class="page-header">
+      <h1 class="project-name">Hotwheels</h1>
+      <h2 class="project-tagline">Erlang messaging server optimized to send 1 message to 40k subscribers to a topic in &lt; 1s</h2>
+      <a href="https://github.com/moooofly/hotwheels" class="btn">View on GitHub</a>
+      <a href="https://github.com/moooofly/hotwheels/zipball/master" class="btn">Download .zip</a>
+      <a href="https://github.com/moooofly/hotwheels/tarball/master" class="btn">Download .tar.gz</a>
+    </section>
+
+    <section class="main-content">
+      <hr>
+
+<h2>
+<a id="一句话概述" class="anchor" href="#%E4%B8%80%E5%8F%A5%E8%AF%9D%E6%A6%82%E8%BF%B0" aria-hidden="true"><span class="octicon octicon-link"></span></a>一句话概述</h2>
+
+<ul>
+<li>Janus 是一种消息服务器，专门被优化以便能够处理，以 TCP 单播方式同时发消息给数以千计客户端的场景。这些客户端可以订阅到各种 topic 上。 </li>
+<li>终极目标是能够在 20k 客户端同时在线的情况下，进行消息推送时保证延时低于 2 秒。 </li>
+</ul>
+
+<hr>
+
+<h2>
+<a id="历史" class="anchor" href="#%E5%8E%86%E5%8F%B2" aria-hidden="true"><span class="octicon octicon-link"></span></a>历史</h2>
+
+<blockquote>
+<p><strong>关于 Janus 的历史</strong></p>
+
+<p>在罗马神话中 Janus 是天门神，早晨打开天门，让阳光普照人间，晚上又把天门关上，使黑暗降临大地。他的头部前后各有一副面孔，同时看着两个不同方向，一副看着过去，一副看着未来，因此也称两面神，或被尊称为时间之神。罗马有好几座 Janus 神庙。Janus 掌管所有的出入门户，因此罗马人在战时永远将 Janus 神殿的门敞开着，以便军人在败阵时躲入殿内以求庇护，或是在战胜时凯旋入殿。早期的 Janus 神像的两副面孔都有胡子，后来没有胡子，但是一副面孔年轻，另一副面孔年老。Janus 的右手指上刻有数字 CCC（300），左手指上刻着数字 LXV（65），合在一起恰是一年的天数。从纪元前 1 世纪起，罗马人把祭祀 Janus 的节日和新年结合在一起。罗马的执政官也在元旦这一天就职，并向 Janus 献祭，祈求国家的安宁。为了纪念 Janus，罗马人把正月称为 Januarius（mensis），意含“Janus 之月”，英文借用了该词，先作 Januarie，后作 January 。而在英文吸收 January 一词之前，撒克逊人把正月叫作 Wulf-Monath（wolf-month），意为“狼月”，因为此时正值严冬，是狼群出没村子寻觅食物的时节。</p>
+</blockquote>
+
+<hr>
+
+<blockquote>
+<p><strong>关于 hotwheels（即风火轮）的历史</strong></p>
+
+<p>双轮暗藏风火之势，行动间有风雷之声，故称风火轮。可踏在脚下作为交通工具，踏上其轮，念动咒语，上天入地，无所不能。 传说是青鸾火凤所化，一蹬九万里，双足十八万里。传说中为哪吒兵器之一。 </p>
+</blockquote>
+
+<hr>
+
+<h2>
+<a id="监督树总体结构" class="anchor" href="#%E7%9B%91%E7%9D%A3%E6%A0%91%E6%80%BB%E4%BD%93%E7%BB%93%E6%9E%84" aria-hidden="true"><span class="octicon octicon-link"></span></a>监督树总体结构</h2>
+
+<pre><code>                                                      |
+                                                   janus_app
+                                                      |
+                                                      | (one_for_one)
+               +-------------------+------------------+--------------------+
+               |                   |                  |                    |
+               |                   |                  |                    |
+             topman          janus_acceptor      (supervisor)            mapper
+               |                                      |
+               |                                      | (simple_one_for_one)
+      +--------+-------|                     +--------+-------+
+      |        |       |                     |        |       |
+      |        |       |                     |        |       |
+   pubsub     ...   pubsub                  ...   transport  ...
+(topic:&lt;&lt;"T1"&gt;&gt;)  (topic:&lt;&lt;"T2"&gt;&gt;)                    |
+                                                      | (janus_flash 封装层)
+                                                      |
+                                                 client_proxy
+
+</code></pre>
+
+<p>其中 </p>
+
+<ul>
+<li>
+<strong>topman</strong> - 维护 pubsub 进程和 Topic 的映射关系； </li>
+<li>
+<strong>pubsub</strong> - 关联特定  Topic 的进程 ；维护所有订阅到该 Topic 的进程信息； </li>
+<li>
+<strong>janus_acceptor</strong> - 处理来自网络的 TCP 连接；动态创建 transport 和 client_proxy 进程，以处理后续协议交互； </li>
+<li>
+<strong>transport</strong> - 针对某个 TCP 连接上的数据处理； </li>
+<li>
+<strong>client_proxy</strong> - 实际处理订阅，取消订阅，以及消息推送的模块； </li>
+<li>
+<strong>mapper</strong> -  提供轻量级进程注册管理功能； </li>
+</ul>
+
+<hr>
+
+<h2>
+<a id="subscriber-行为" class="anchor" href="#subscriber-%E8%A1%8C%E4%B8%BA" aria-hidden="true"><span class="octicon octicon-link"></span></a>subscriber 行为</h2>
+
+<pre lang="sequence"><code>title: subscriber 行为
+subscriber(flashbot)--&gt;janus: ...TCP setup...
+Note right of janus: a. janus_acceptor 创建 transport 进程
+Note right of janus: b. 进而创建 client_proxy 进程
+Note right of janus: c. 发送成功创建 client_proxy 的时间戳和 token 标识
+janus-&gt;subscriber(flashbot): {timestamp:xxx, token:yyy},1
+subscriber(flashbot)-&gt;janus: &lt;regular-socket/&gt;,0,PING,0
+subscriber(flashbot)-&gt;janus: &lt;regular-socket/&gt;,0,{action:subscribe, data:events},0
+Note right of janus: 内部经过 
+Note right of janus: transport -&gt;client_proxy -&gt; topman -&gt; pubsub
+Note right of janus: 的处理，最终回复 subscribe 成功的 ack
+janus-&gt;subscriber(flashbot): ACK,1
+</code></pre>
+
+<h3>
+<a id="janus-针对-subscribe-的内部处理" class="anchor" href="#janus-%E9%92%88%E5%AF%B9-subscribe-%E7%9A%84%E5%86%85%E9%83%A8%E5%A4%84%E7%90%86" aria-hidden="true"><span class="octicon octicon-link"></span></a>janus 针对 subscribe 的内部处理</h3>
+
+<pre lang="sequence"><code>title: subscribe 的内部处理
+subscriber--&gt;transport: ...TCP setup...
+subscriber-&gt;transport: ...{action:subscribe, data:Topic}...
+transport-&gt;client_proxy: cast {Action, Topic}
+client_proxy-&gt;topman: topman:subscribe(CProxyPid,Topic)
+topman-&gt;topman: cast {subscribe, CProxyPid, Topic}
+Note right of topman: [...
+Note right of topman: 在没有与 Topic 关联的 pubsub 进程时，才有如下三步
+topman--&gt;pubsub: pubsub:start(Topic)
+pubsub--&gt;pubsub: 关联 Topic
+topman--&gt;pubsub: monitor
+Note right of topman: ...] 
+topman-&gt;pubsub: pubsub:subscribe(PSPid, CProxyPid)
+pubsub-&gt;pubsub: cast {subscribe, CProxyPid}
+pubsub-&gt;client_proxy: monitor
+pubsub-&gt;client_proxy: ack
+client_proxy-&gt;transport: ack
+transport-&gt;subscriber: ACK,1
+</code></pre>
+
+<hr>
+
+<h2>
+<a id="publisher-行为" class="anchor" href="#publisher-%E8%A1%8C%E4%B8%BA" aria-hidden="true"><span class="octicon octicon-link"></span></a>publisher 行为</h2>
+
+<pre lang="sequence"><code>title: publisher 行为
+subscriber(flashbot)--&gt;janus: ...TCP setup...
+publisher(flashbot)--&gt;janus: ...TCP setup...
+publisher(flashbot)-&gt;janus: &lt;regular-socket/&gt;,0,PUBLISH,0,{topic:xxx,event:xxx,message_id:xxx,data:xxx}
+Note right of janus: 内部经过
+Note right of janus: transport -&gt; topman -&gt; pubsub -&gt; client_proxy
+Note right of janus: 的处理，最终将消息推送给 subscriber
+janus-&gt;subscriber(flashbot): {timestamp:xxx, topic:Topic},1
+Note right of janus: 在 publish 后，启动 30s 定时器
+Note right of janus: 在 30s 内若没有新内容需要 publish，则触发 PING 发送
+janus-&gt;subscriber(flashbot): PING,1
+subscriber(flashbot)-&gt;janus: PONG,0
+</code></pre>
+
+<h3>
+<a id="janus-针对-publish-的内部处理" class="anchor" href="#janus-%E9%92%88%E5%AF%B9-publish-%E7%9A%84%E5%86%85%E9%83%A8%E5%A4%84%E7%90%86" aria-hidden="true"><span class="octicon octicon-link"></span></a>janus 针对 publish 的内部处理</h3>
+
+<pre lang="sequence"><code>title: publish 的内部处理
+publisher--&gt;transport: ...TCP setup...
+publisher-&gt;transport: ...PUBLISH,0,{topic:Topic,...}...
+transport-&gt;topman: topman:publish(Msg, Topic)
+topman-&gt;topman: abcast {publish, Msg, Topic}
+Note right of topman: [...
+Note right of topman: 在没有与 Topic 关联的 pubsub 进程时，才有如下三步
+topman--&gt;pubsub: pubsub:start(Topic)
+pubsub--&gt;pubsub: 关联 Topic
+topman--&gt;pubsub: monitor
+Note right of topman: ...] 
+topman-&gt;pubsub: pubsub:publish(PSPid, Msg)
+pubsub-&gt;pubsub: cast {publish, Msg}
+pubsub-&gt;client_proxy_n: {message,Msg_1}
+client_proxy_n-&gt;subscriber_n: {timestamp:xx, topic:Topic,...},1
+</code></pre>
+
+<hr>
+
+<h2>
+<a id="协议细节" class="anchor" href="#%E5%8D%8F%E8%AE%AE%E7%BB%86%E8%8A%82" aria-hidden="true"><span class="octicon octicon-link"></span></a>协议细节</h2>
+
+<h3>
+<a id="subscriber-协议交互" class="anchor" href="#subscriber-%E5%8D%8F%E8%AE%AE%E4%BA%A4%E4%BA%92" aria-hidden="true"><span class="octicon octicon-link"></span></a>subscriber 协议交互</h3>
+
+<pre><code>flashbot                                               janus
+
+        &lt;regular-socket/&gt;,0,PING,0
+        ----------------------------------------------&gt;
+
+        {
+            "timestamp":[1448,434925,303633],
+            "token":[55,97,55,100,48,102,56,98,102,97,97,49,54,101,48,48,48,100,101,99,54,55,48,57,55,99,101,99,97,99,56,56]
+        },1
+        &lt;----------------------------------------------
+
+        &lt;regular-socket/&gt;,0,
+        {
+            "action":"subscribe",
+            "data":"events"
+        },0
+        ----------------------------------------------&gt;
+
+                                                ACK,1
+        &lt;----------------------------------------------
+
+        {
+            "timestamp":[1448,434925,395864],
+            "topic":"events",
+            "event":"test_event",
+            "message_id":"",
+            "data":"test"
+        },1
+        &lt;----------------------------------------------
+
+        &lt;regular-socket/&gt;,0,
+        {
+            "action":"unsubscribe",
+            "data":"events"
+        },0
+        ----------------------------------------------&gt;
+</code></pre>
+
+<p>对应网络数据</p>
+
+<pre><code>00000000  3c 72 65 67 75 6c 61 72  2d 73 6f 63 6b 65 74 2f &lt;regular -socket/
+00000010  3e 00 50 49 4e 47 00                             &gt;.PING.
+    00000000  7b 22 74 69 6d 65 73 74  61 6d 70 22 3a 5b 31 34 {"timest amp":[14
+    00000010  34 38 2c 34 33 34 39 32  35 2c 33 30 33 36 33 33 48,43492 5,303633
+    00000020  5d 2c 22 74 6f 6b 65 6e  22 3a 5b 35 35 2c 39 37 ],"token ":[55,97
+    00000030  2c 35 35 2c 31 30 30 2c  34 38 2c 31 30 32 2c 35 ,55,100, 48,102,5
+    00000040  36 2c 39 38 2c 31 30 32  2c 39 37 2c 39 37 2c 34 6,98,102 ,97,97,4
+    00000050  39 2c 35 34 2c 31 30 31  2c 34 38 2c 34 38 2c 34 9,54,101 ,48,48,4
+    00000060  38 2c 31 30 30 2c 31 30  31 2c 39 39 2c 35 34 2c 8,100,10 1,99,54,
+    00000070  35 35 2c 34 38 2c 35 37  2c 35 35 2c 39 39 2c 31 55,48,57 ,55,99,1
+    00000080  30 31 2c 39 39 2c 39 37  2c 39 39 2c 35 36 2c 35 01,99,97 ,99,56,5
+    00000090  36 5d 7d 01                                      6]}.
+00000017  3c 72 65 67 75 6c 61 72  2d 73 6f 63 6b 65 74 2f &lt;regular -socket/
+00000027  3e 00 7b 22 61 63 74 69  6f 6e 22 3a 22 73 75 62 &gt;.{"acti on":"sub
+00000037  73 63 72 69 62 65 22 2c  22 64 61 74 61 22 3a 22 scribe", "data":"
+00000047  65 76 65 6e 74 73 22 7d  00                      events"} .
+    00000094  41 43 4b 01                                      ACK.
+    00000098  7b 22 74 69 6d 65 73 74  61 6d 70 22 3a 5b 31 34 {"timest amp":[14
+    000000A8  34 38 2c 34 33 34 39 32  35 2c 33 39 35 38 36 34 48,43492 5,395864
+    000000B8  5d 2c 22 74 6f 70 69 63  22 3a 22 65 76 65 6e 74 ],"topic ":"event
+    000000C8  73 22 2c 22 65 76 65 6e  74 22 3a 22 74 65 73 74 s","even t":"test
+    000000D8  5f 65 76 65 6e 74 22 2c  22 6d 65 73 73 61 67 65 _event", "message
+    000000E8  5f 69 64 22 3a 22 22 2c  22 64 61 74 61 22 3a 22 _id":"", "data":"
+    000000F8  74 65 73 74 22 7d 01                             test"}.
+00000050  3c 72 65 67 75 6c 61 72  2d 73 6f 63 6b 65 74 2f &lt;regular -socket/
+00000060  3e 00 7b 22 61 63 74 69  6f 6e 22 3a 22 75 6e 73 &gt;.{"acti on":"uns
+00000070  75 62 73 63 72 69 62 65  22 2c 22 64 61 74 61 22 ubscribe ","data"
+00000080  3a 22 65 76 65 6e 74 73  22 7d 00                :"events "}.
+</code></pre>
+
+<h3>
+<a id="publisher-协议交互" class="anchor" href="#publisher-%E5%8D%8F%E8%AE%AE%E4%BA%A4%E4%BA%92" aria-hidden="true"><span class="octicon octicon-link"></span></a>publisher 协议交互</h3>
+
+<pre><code>flashbot                                               janus
+
+        &lt;regular-socket/&gt;,0,PUBLISH,0
+        {
+            "topic":"events",
+            "event":"test_event",
+            "message_id":"",
+            "data":"test"
+        }
+        ----------------------------------------------&gt;
+
+        {
+            "timestamp":[1448,434925,395595],
+            "token":[100,52,97,53,56,51,54,99,57,97,50,52,50,57,52,57,55,48,52,102,48,100,99,53,102,55,56,101,101,97,53,98]
+        },1
+        &lt;----------------------------------------------
+</code></pre>
+
+<p>对应网络数据</p>
+
+<pre><code>00000000  3c 72 65 67 75 6c 61 72  2d 73 6f 63 6b 65 74 2f &lt;regular -socket/
+00000010  3e 00 50 55 42 4c 49 53  48 00 7b 22 74 6f 70 69 &gt;.PUBLIS H.{"topi
+00000020  63 22 3a 22 65 76 65 6e  74 73 22 2c 22 65 76 65 c":"even ts","eve
+00000030  6e 74 22 3a 22 74 65 73  74 5f 65 76 65 6e 74 22 nt":"tes t_event"
+00000040  2c 22 6d 65 73 73 61 67  65 5f 69 64 22 3a 22 22 ,"messag e_id":""
+00000050  2c 22 64 61 74 61 22 3a  22 74 65 73 74 22 7d    ,"data": "test"}
+    00000000  7b 22 74 69 6d 65 73 74  61 6d 70 22 3a 5b 31 34 {"timest amp":[14
+    00000010  34 38 2c 34 33 34 39 32  35 2c 33 39 35 35 39 35 48,43492 5,395595
+    00000020  5d 2c 22 74 6f 6b 65 6e  22 3a 5b 31 30 30 2c 35 ],"token ":[100,5
+    00000030  32 2c 39 37 2c 35 33 2c  35 36 2c 35 31 2c 35 34 2,97,53, 56,51,54
+    00000040  2c 39 39 2c 35 37 2c 39  37 2c 35 30 2c 35 32 2c ,99,57,9 7,50,52,
+    00000050  35 30 2c 35 37 2c 35 32  2c 35 37 2c 35 35 2c 34 50,57,52 ,57,55,4
+    00000060  38 2c 35 32 2c 31 30 32  2c 34 38 2c 31 30 30 2c 8,52,102 ,48,100,
+    00000070  39 39 2c 35 33 2c 31 30  32 2c 35 35 2c 35 36 2c 99,53,10 2,55,56,
+    00000080  31 30 31 2c 31 30 31 2c  39 37 2c 35 33 2c 39 38 101,101, 97,53,98
+    00000090  5d 7d 01                                         ]}.
+</code></pre>
+
+      <footer class="site-footer">
+        <span class="site-footer-owner"><a href="https://github.com/moooofly/hotwheels">Hotwheels</a> is maintained by <a href="https://github.com/moooofly">moooofly</a>.</span>
+
+        <span class="site-footer-credits">This page was generated by <a href="https://pages.github.com">GitHub Pages</a> using the <a href="https://github.com/jasonlong/cayman-theme">Cayman theme</a> by <a href="https://twitter.com/jasonlong">Jason Long</a>.</span>
+      </footer>
+
+    </section>
+
+  
+  </body>
+</html>
