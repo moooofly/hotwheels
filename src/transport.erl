@@ -107,7 +107,7 @@ handle_info({'EXIT', _, _}, State) ->
     {noreply, State};
 
 %% 处理
-%% 1.没有 "<regular-socket/>" 头的、来自 client socket 的数据（新增上面的分支后，该说明已废）
+%% 1.没有 "<regular-socket/>" 头的、来自 client socket 的数据（新增上面的分支后，该功能已废）
 %% 2.来自 client_proxy 进程、通过 ! 发送的 heartbeat 和 ack 消息
 handle_info(Info, State) 
   when State#state.transport /= undefined ->
