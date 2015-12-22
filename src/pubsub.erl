@@ -35,10 +35,11 @@
          handle_info/2, terminate/2, code_change/3]).
 
 -record(state, {
-          topic,                        %% 当前 pubsub 进程负责处理的 topic
-          subs = ets:new(subs, [set])   %% {Key, Value} -> {Pid, Ref}
-         }).                            %% Pid -> 订阅当前 topic 的 client_proxy 进程 pid
-                                        %% Ref -> monitor(Pid)
+          topic,        %% 当前 pubsub 进程负责处理的 topic
+          subs          %% {Key, Value} -> {{Topic,Pid}, Ref}
+         }).            %%      Topic -> 订阅关键词
+                        %%      Pid -> 订阅当前 topic 的 client_proxy 进程 pid
+                        %%      Ref -> monitor(Pid)
 
 %% 发布（广播消息给所有订阅者）
 publish(Ref, Msg) ->
@@ -60,22 +61,28 @@ start(Topic) ->
 stop(Ref) ->
     gen_server:cast(Ref, stop).
 
-init([Topic]) ->
+
+init([Topic]) when is_binary(Topic) ->
     process_flag(trap_exit, true),
-    {ok, #state{topic = Topic}}.
+    {ok, #state{topic=Topic, subs=ets:new(binary_to_atom(Topic, latin1) , [named_table, set])}};
+
+init([Topic]) when is_atom(Topic) ->
+    process_flag(trap_exit, true),
+    {ok, #state{topic=Topic, subs=ets:new(Topic, [named_table, set])}}.
+
 
 handle_cast(stop, State) ->
     {stop, normal, State};
 
 %% Pid -> 订阅当前 topic 的进程 pid (client_proxy)
-handle_cast({subscribe, Pid}, State) ->
+handle_cast({subscribe, Pid}, State=#state{topic=Topic}) ->
     %% automatically unsubscribe when dead
     Ref = erlang:monitor(process, Pid),
     error_logger:info_msg("[pubsub] handle_cast => recv {subscribe, ~p} to Topic(~p) and ! to client_proxy(~p) ack~n", 
         [Pid, State#state.topic, Pid]),
     %% 告知订阅成功
     Pid ! ack,
-    ets:insert(State#state.subs, {Pid, Ref}),
+    ets:insert(State#state.subs, {{Topic, Pid}, Ref}),
     {noreply, State};
 
 handle_cast({unsubscribe, Pid}, State) ->
@@ -95,7 +102,7 @@ handle_cast({publish, Msg}, State) ->
     JSON = {struct, [{<<"timestamp">>, TS}|L]},
     Msg1 = {message, iolist_to_binary(mochijson2:encode(JSON))},
     %% 广播给所有订阅当前 topic 的 client_proxy 进程（内部临时调高进程优先级）
-    F = fun({Pid, _Ref}, _) -> Pid ! Msg1 end,
+    F = fun({{_Topic, Pid}, _Ref}, _) -> Pid ! Msg1 end,
     %% [Note]
     erlang:process_flag(priority, high),
     ets:foldr(F, ignore, State#state.subs),
@@ -126,11 +133,11 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-unsubscribe1(Pid, State) ->
-    case ets:lookup(State#state.subs, Pid) of
-        [{_, Ref, _}] ->
+unsubscribe1(Pid, State=#state{topic=Topic}) ->
+    case ets:lookup(State#state.subs, {Topic,Pid}) of
+        [{{Topic,_Pid}, Ref}] ->
             erlang:demonitor(Ref),
-            ets:delete(State#state.subs, Pid);
+            ets:delete(State#state.subs, {Topic,Pid});
         _ ->
             ok
     end,
