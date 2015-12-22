@@ -59,90 +59,33 @@
 
 ## subscriber 行为
 
-```sequence
-title: subscriber 行为
-subscriber(flashbot)-->janus: ...TCP setup...
-Note right of janus: a. janus_acceptor 创建 transport 进程
-Note right of janus: b. 进而创建 client_proxy 进程
-Note right of janus: c. 发送成功创建 client_proxy 的时间戳和 token 标识
-janus->subscriber(flashbot): {timestamp:xxx, token:yyy},1
-subscriber(flashbot)->janus: <regular-socket/>,0,PING,0
-subscriber(flashbot)->janus: <regular-socket/>,0,{action:subscribe, data:events},0
-Note right of janus: 内部经过 
-Note right of janus: transport ->client_proxy -> topman -> pubsub
-Note right of janus: 的处理，最终回复 subscribe 成功的 ack
-janus->subscriber(flashbot): ACK,1
-```
+![](https://raw.githubusercontent.com/moooofly/hotwheels/master/images/subscriber%20%E8%A1%8C%E4%B8%BA.png "Subscriber 交互")
 
 
 ### janus 针对 subscribe 的内部处理
 
-```sequence
-title: subscribe 的内部处理
-subscriber-->transport: ...TCP setup...
-subscriber->transport: ...{action:subscribe, data:Topic}...
-transport->client_proxy: cast {Action, Topic}
-client_proxy->topman: topman:subscribe(CProxyPid,Topic)
-topman->topman: cast {subscribe, CProxyPid, Topic}
-Note right of topman: [...
-Note right of topman: 在没有与 Topic 关联的 pubsub 进程时，才有如下三步
-topman-->pubsub: pubsub:start(Topic)
-pubsub-->pubsub: 关联 Topic
-topman-->pubsub: monitor
-Note right of topman: ...] 
-topman->pubsub: pubsub:subscribe(PSPid, CProxyPid)
-pubsub->pubsub: cast {subscribe, CProxyPid}
-pubsub->client_proxy: monitor
-pubsub->client_proxy: ack
-client_proxy->transport: ack
-transport->subscriber: ACK,1
-```
+![](https://raw.githubusercontent.com/moooofly/hotwheels/master/images/janus%20针对%20subscribe%20的内部处理.png "Subscribe 在 janus 的内部处理")
+
 
 ----------
 
 ## publisher 行为
 
-```sequence
-title: publisher 行为
-subscriber(flashbot)-->janus: ...TCP setup...
-publisher(flashbot)-->janus: ...TCP setup...
-publisher(flashbot)->janus: <regular-socket/>,0,PUBLISH,0,{topic:xxx,event:xxx,message_id:xxx,data:xxx}
-Note right of janus: 内部经过
-Note right of janus: transport -> topman -> pubsub -> client_proxy
-Note right of janus: 的处理，最终将消息推送给 subscriber
-janus->subscriber(flashbot): {timestamp:xxx, topic:Topic},1
-Note right of janus: 在 publish 后，启动 30s 定时器
-Note right of janus: 在 30s 内若没有新内容需要 publish，则触发 PING 发送
-janus->subscriber(flashbot): PING,1
-subscriber(flashbot)->janus: PONG,0
-```
+![](https://raw.githubusercontent.com/moooofly/hotwheels/master/images/publisher%20行为.png "Publisher 交互")
 
 
 ### janus 针对 publish 的内部处理
 
-```sequence
-title: publish 的内部处理
-publisher-->transport: ...TCP setup...
-publisher->transport: ...PUBLISH,0,{topic:Topic,...}...
-transport->topman: topman:publish(Msg, Topic)
-topman->topman: abcast {publish, Msg, Topic}
-Note right of topman: [...
-Note right of topman: 在没有与 Topic 关联的 pubsub 进程时，才有如下三步
-topman-->pubsub: pubsub:start(Topic)
-pubsub-->pubsub: 关联 Topic
-topman-->pubsub: monitor
-Note right of topman: ...] 
-topman->pubsub: pubsub:publish(PSPid, Msg)
-pubsub->pubsub: cast {publish, Msg}
-pubsub->client_proxy_n: {message,Msg_1}
-client_proxy_n->subscriber_n: {timestamp:xx, topic:Topic,...},1
-```
+![](https://raw.githubusercontent.com/moooofly/hotwheels/master/images/janus%20针对%20publish%20的内部处理.png "Publish 在 janus 的内部处理")
+
 
 ----------
 
 ## 协议细节
 
 ### subscriber 协议交互
+
+![](https://raw.githubusercontent.com/moooofly/hotwheels/master/images/subscriber%20协议抓包.png "Subscriber 协议交互抓包")
 
 ```
 flashbot                                               janus
@@ -217,6 +160,8 @@ flashbot                                               janus
 ```
 
 ### publisher 协议交互
+
+![](https://raw.githubusercontent.com/moooofly/hotwheels/master/images/publisher%20协议抓包.png "Publisher 协议交互抓包")
 
 ```
 flashbot                                               janus
