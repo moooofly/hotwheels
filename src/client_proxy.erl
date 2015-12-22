@@ -155,10 +155,11 @@ handle_info(heartbeat, State) ->
     %% no transport attached
     {noreply, State};
 
-%% 收到来自 pubsub 的 topic 订阅成功应答
+%% 收到来自 pubsub 的 topic 订阅 或 取消订阅 成功应答
 handle_info(ack, State) 
   when is_pid(State#state.parent) ->
-    error_logger:info_msg("[client_proxy] handle_info => recv subsribe-ack from pubsub and ! to transport(~p)~n", [State#state.parent]),
+    error_logger:info_msg("[client_proxy] handle_info => recv ack to (un)subsribe from pubsub and ! to transport(~p)~n", 
+        [State#state.parent]),
     State#state.parent ! ack,
     {noreply, State};
 

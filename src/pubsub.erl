@@ -134,6 +134,10 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 unsubscribe1(Pid, State=#state{topic=Topic}) ->
+    error_logger:info_msg("[pubsub] handle_cast => recv {unsubscribe, ~p} to Topic(~p) and ! to client_proxy(~p) ack~n", 
+        [Pid, Topic, Pid]),
+    %% 告知取消订阅成功
+    Pid ! ack,
     case ets:lookup(State#state.subs, {Topic,Pid}) of
         [{{Topic,_Pid}, Ref}] ->
             erlang:demonitor(Ref),

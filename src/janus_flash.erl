@@ -51,7 +51,7 @@ forward(Bin, State)
 process(heartbeat, State) ->
     send(<<"PING">>, State);
 
-%% 来自 client_proxy 的 "!" ，对应订阅成功应答
+%% 来自 client_proxy 的 "!" ，对应 订阅 或 取消订阅 成功应答
 process(ack, State) ->
     error_logger:info_msg("[janus_flash] process => send ACK to peer~n", []),
     send(<<"ACK">>, State);
