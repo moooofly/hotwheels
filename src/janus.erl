@@ -23,11 +23,13 @@
 
 -export([start/0, start/1]).
 
+-define(LISTEN_PORT, 1234).
+
 start() ->
     start([]).
 
 start([]) ->
-    start(8081);
+    start(1234);
 
 start([Port]) 
   when is_atom(Port) ->
@@ -38,6 +40,4 @@ start(Port)
     inets:start(),
     application:set_env(janus, listen_port, Port),
     application:start(janus).
-
-
 
