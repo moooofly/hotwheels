@@ -1,6 +1,7 @@
 {application, janus,
- [{description, "Janus"},
-  {vsn, "0.0.1"},
+ [
+  {description, "Janus by moooofly"},
+  {vsn, "0.0.2"},
   {id, "janus"},
   {modules, [barrier,
              bin,
@@ -30,11 +31,7 @@
                 janus_proxy_mapper_sup,
                 janus_transport_sup,
                 janus_listener]},
-  {applications, [kernel,
-                  stdlib,
-                  mnesia,
-                  inets
-                 ]},
+  {applications, [kernel, stdlib, inets]},
   {mod, {janus_app, []}},
   {env, []}
  ]
