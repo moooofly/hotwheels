@@ -106,7 +106,7 @@ no_token({struct, [{<<"token">>, Token}]}, #state{topic=Topic}=State) ->
 
 %% 订阅成功
 not_subscribed(ack, State) ->
-    error_logger:info_msg("recv subscribe-ack~n", []),
+    error_logger:info_msg("[flashbot2] recv ACK to Subscribe.~n", []),
     %% 增加计数器的值 +1
     barrier:bump(State#state.barrier),
     {next_state, subscribed, State#state{start = now()}}.
@@ -117,8 +117,9 @@ subscribed(token_timeout, State) ->
 
 %% 当全部 flashbot 成功 subscribe 后，进入该状态，并在 5s 后停止当前 flashbot
 subscribed(ready, State) ->
-    Ref = gen_fsm:send_event_after(5000000, timeout),
-    {next_state, subscribed, State#state{start = now(), timer = Ref}};
+    % Ref = gen_fsm:send_event_after(5000, timeout),
+    % {next_state, subscribed, State#state{start = now(), timer = Ref}};
+    {next_state, subscribed, State#state{start = now()}};
 
 %% 当前 flashbot 通过超时定时器被停止
 subscribed(timeout, State) ->
@@ -135,7 +136,7 @@ subscribed(timeout, State) ->
 subscribed(Expected, State) ->
     %% 告知收到订阅消息
     State#state.parent ! {success, State#state.latency},
-    error_logger:info_msg("recv Expected msg => ~n~p~n", [Expected]),
+    error_logger:info_msg("[flashbot2] recv PUBLISH Msg =>~n~p~n", [Expected]),
     {next_state, subscribed, State}.
 
 %% [Note]
@@ -149,12 +150,13 @@ handle_sync_event(Event, From, Where, State) ->
 handle_info({'DOWN', _, process, Pid, normal}, Where, State)
   when Pid == State#state.barrier ->
     %% 此处 Where 只能是 subscribed
+    error_logger:info_msg("[flashbot2] recv 'DOWN' from barrier, ready for PUBLISH Msg.~n", []),
     ?MODULE:Where(ready, State);
 
 %% 收到 PING
 %% 作为订阅者，在收到发布消息之后的 30s 内，未收到新发布消息，则会收到 PING
 handle_info({tcp, Sock, <<"PING", 1>>}, Where, State) ->
-    error_logger:info_msg("recv PING, send PONG. Where:~p~n", [Where]),
+    error_logger:info_msg("[flashbot2] recv PING, send PONG.~n", []),
     inet:setopts(Sock, [{active, once}]),
     send(<<"PONG">>, State, Where);
 
@@ -171,6 +173,7 @@ handle_info({tcp, Sock, Bin}, Where, State)
 handle_info({tcp, Sock, <<"ACK", 1>>}, Where, State) ->
     inet:setopts(Sock, [{active, once}]),
     %% 此处 Where 只能是 not_subscribed
+    %% not_subscribed -> subscribed
     ?MODULE:Where(ack, State);
 
 handle_info({tcp, Sock, Bin}, Where, State) ->
@@ -186,13 +189,13 @@ handle_info({tcp, Sock, Bin}, Where, State) ->
             Now = now(),
             JSON = mochijson2:decode(Bin1),
             %% grab the timestamp
-            %% L -> [{<<"token">>, Token}]
+            %% 带时间戳的消息只有两种：获取 token 的消息和推送消息
             {struct, [{<<"timestamp">>, TS}|L]} = JSON,
             %% 从 janus 发送，到 flashbot 接收之间的延迟
             Delta = timer:now_diff(Now, list_to_tuple(TS)),
             State1 = State#state{latency = Delta, data = undefined},
-            %% 发起订阅
-            %% 此处的 where 只能是 no_token 或 subscribed
+            %% 此处的 where 切换
+            %% no_token -> not_subscribed
             case ?MODULE:Where({struct, L}, State1) of 
                 {next_state, Where1, State2} ->
                     ?MODULE:handle_info({tcp, Sock, Rest}, Where1, State2);
@@ -208,8 +211,8 @@ handle_info(X, _, State)
        element(1, X) == tcp_error ->
     %% 告知 TCP 链路出现问题
     State#state.parent ! disconnected,
-    %% [Note] 为何此时停止定时器，如何保证此时一定有定定时器？
-    catch gen_fsm:cancel_timer(State#state.timer),
+    %% [Note] 为何此时停止定时器，如何保证此时一定有定时器？
+    % catch gen_fsm:cancel_timer(State#state.timer),
     reconnect(),
     {next_state, not_connected, State#state{timer = none}};
 
