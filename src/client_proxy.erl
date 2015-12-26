@@ -132,7 +132,8 @@ handle_info({message, Msg}, State)
        is_binary(Msg) ->
     %% send immediately
     %% State#state.parent ! Event,
-    lager:info("[client_proxy] handle_info => recv {message, ~p} from pubsub, send to flashbot", [Msg]),
+    lager:info("[client_proxy] handle_info => recv Broadcast msg~n---~n{message, ~p}~n---~nfrom pubsub, send to peer.", 
+        [Msg]),
     %% 通过 socket 发布推送消息
     (State#state.send)(Msg),
     %% 启动 30s 定时器，当推送后的 30s 内没有新消息需要推送，则触发 PING 发送
@@ -146,7 +147,7 @@ handle_info({message, Msg}, State) ->
 
 handle_info(heartbeat, State) 
   when is_pid(State#state.parent) ->
-    lager:info("[client_proxy] handle_info => 30s elapse after last Msg, PING peer by transport(~p)", 
+    lager:debug("[client_proxy] handle_info => 30s elapse after last Msg, ! to transport(~p).", 
         [State#state.parent]),
     State#state.parent ! heartbeat,
     {noreply, State};
@@ -158,7 +159,7 @@ handle_info(heartbeat, State) ->
 %% 收到来自 pubsub 的 topic 订阅 或 取消订阅 成功应答
 handle_info(ack, State) 
   when is_pid(State#state.parent) ->
-    lager:debug("[client_proxy] handle_info => recv ack to (un)subsribe from pubsub and ! to transport(~p)", 
+    lager:debug("[client_proxy] handle_info => recv ack to (un)subsribe from pubsub, ! to transport(~p).", 
         [State#state.parent]),
     State#state.parent ! ack,
     {noreply, State};
@@ -187,7 +188,7 @@ cancel_heartbeat(State) ->
 
 %% 更新 heartbeat 定时器
 start_heartbeat(State) ->
-    lager:info("[client_proxy] start_heartbeat => reset heartbeat timer!"),
+    lager:debug("[client_proxy] start_heartbeat => reset heartbeat timer!"),
     Timer = erlang:send_after(?HEARTBEAT, self(), heartbeat),
     State1 = cancel_heartbeat(State),
     State1#state{heartbeat = Timer}.

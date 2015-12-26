@@ -94,12 +94,11 @@ handle_info({tcp, Socket, <<"<regular-socket/>", 0, Bin/binary>>}, State)
     lager:debug("[transport] handle_info => recv Bin(~p) with <regular-socket/>, dispatch", [Bin]),
     dispatch(Bin, janus_flash, State);
 
-%% [Note] new
 %% 处理不带 "<regular-socket/>" 头的数据
 handle_info({tcp, Socket, <<Bin/binary>>}, State)
   when Socket == State#state.socket ->
     inet:setopts(Socket, [{active, once}]),
-    lager:info("[transport] handle_info => recv Bin(~p) without <regular-socket/>, dispatch", [Bin]),
+    lager:debug("[transport] handle_info => recv Bin(~p) without <regular-socket/>, dispatch", [Bin]),
     dispatch(Bin, janus_flash, State);
 
 handle_info({'EXIT', _, _}, State) ->

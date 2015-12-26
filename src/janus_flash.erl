@@ -45,11 +45,12 @@ forward(Bin, State)
 %% 来自 client_proxy 的 "!"
 %% 当 publish 消息到 peer 后 30s 内无新消息要发送，则发送 PING
 process(heartbeat, State) ->
+    lager:info("[janus_flash] process => send PING(heartbeat) to peer.", []),
     send(<<"PING">>, State);
 
 %% 来自 client_proxy 的 "!" ，对应 订阅 或 取消订阅 成功应答
 process(ack, State) ->
-    lager:info("[janus_flash] process => send ACK to peer", []),
+    lager:info("[janus_flash] process => send ACK to peer.", []),
     send(<<"ACK">>, State);
 
 process(<<>>, State) ->
@@ -58,14 +59,14 @@ process(<<>>, State) ->
 
 %% 处理带 "<regular-socket/>" 头的情况
 process(<<"<regular-socket/>", 0, Bin/binary>>, State) ->
-    lager:info("[janus_flash] process => with head", []),
+    lager:info("[janus_flash] process => with head.", []),
     process(Bin, State);
 
 %% 处理尚有缓存数据的情况
 process(Bin, State) 
   when is_binary(State#state.data),
        is_binary(Bin) ->
-    lager:info("[janus_flash] process => with buffer-data", []),
+    lager:info("[janus_flash] process => with buffer-data.", []),
     process(list_to_binary([State#state.data, Bin]),
             State#state{data = undefined});
 
@@ -86,12 +87,12 @@ process({ok, <<>>, Rest}, State) ->
 
 %% 收到来自 peer 的 PING
 process({ok, <<"PING">>, Rest}, State) ->
-    lager:info("[janus_flash] process => recv PING from peer", []),
+    lager:info("[janus_flash] process => recv PING from peer.", []),
     process(Rest, State);
 
 %% 收到来自 peer 的 PONG
 process({ok, <<"PONG">>, Rest}, State) ->
-    lager:info("[janus_flash] process => recv PONG from peer", []),
+    lager:info("[janus_flash] process => recv PONG(heartbeat) from peer.", []),
     process(Rest, State);
 
 %% 收到 PUBLISH 指令
@@ -101,7 +102,7 @@ process({ok, <<"PUBLISH">>, Rest}, State) ->
                      {<<"message_id">>, _},
                      {<<"data">>, _}
                     ]} = mochijson2:decode(Rest),
-    lager:info("[janus_flash] process => recv PUBLISH, topman start to publish(Topic:~p)", [Topic]),
+    lager:info("[janus_flash] process => recv PUBLISH, topman start to publish(Topic:~p).", [Topic]),
     %% 向指定 Topic 进行 publish
     topman:publish(JSON, Topic),
     {ok, shutdown, State};
@@ -113,7 +114,7 @@ process({ok, Bin, Rest}, State) ->
          {<<"topic">>, Topic}
      ]} = mochijson2:decode(Bin),
      lager:info("[janus_flash] process => recv {\"action\":~p, \"topic\":~p} from peer.", [Action, Topic]),
-     lager:debug("[janus_flash] process => cast (un)subscribe info to client_proxy", []),
+     lager:debug("[janus_flash] process => cast (un)subscribe info to client_proxy.", []),
     %% 发送 subscribe 或 unsubscribe 给 client_proxy
     gen_server:cast(State#state.proxy, {Action, Topic}),
     process(Rest, State).

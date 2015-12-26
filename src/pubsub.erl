@@ -93,7 +93,7 @@ handle_cast({publish, Msg}, State) ->
     %% 这里通过 io:format/2 输出打印，而没有通过 error_logger:xxx 输出，应该是因为速度问题
     %%io:format("[pubsub] handle_cast => recv {publish, Msg}~nets:info(subs): ~p~n", [ets:info(State#state.subs)]),
 
-    lager:info("[pubsub] handle_cast => recv {publish, ~p}", [Msg]),
+    lager:debug("[pubsub] handle_cast => recv {publish, ~p}", [Msg]),
 
     %% 为 Msg 内容添加时间戳
     Start = now(),
