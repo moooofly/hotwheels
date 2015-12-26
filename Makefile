@@ -1,3 +1,6 @@
+
+EXEC_PATH = ./
+
 LOAD_PATH = \
 	-pa ebin \
 	-pa deps/lager/ebin \
@@ -26,7 +29,8 @@ LOCAL_OPTS = \
 all: compile
 
 compile:
-	erl -make -smp disable
+#	erl -make -smp disable
+	$(EXEC_PATH)rebar compile
 
 make_boot: compile
 	erl $(BASIC_OPTS) -s janus_admin make_boot -s init stop
@@ -50,6 +54,5 @@ ns: compile
 	erl $(LOCAL_OPTS) -sname ns_test -run bot2 test_ns flashbot2 1 "172.16.81.111" 1234 "ns_status_change" 
 
 clean:
-	rm -rf ebin/*.beam
-	rm -rf ebin/*.app
+	$(EXEC_PATH)rebar clean
 
