@@ -6,3 +6,5 @@ ebin/*.beam
 ebin/janus.boot
 ebin/janus.script
 priv/*
+deps/
+ebin/
