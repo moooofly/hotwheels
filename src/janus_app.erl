@@ -37,6 +37,7 @@ start_transport(Port) ->
 
 %% 应用启动入口
 start(_Type, _Args) ->
+    lager:start(),
     Port = janus_admin:get_env(listen_port, ?LISTEN_PORT),
     supervisor:start_link({local, ?MODULE}, ?MODULE, [Port, transport]).
 
