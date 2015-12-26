@@ -44,10 +44,10 @@ sh: compile
 	erl $(LOCAL_OPTS) -sname debug 
 
 pas: compile 
-	erl $(LOCAL_OPTS) -sname pas_test 
+	erl $(LOCAL_OPTS) -sname pas_test -run bot2 test_pas flashbot2 1 "172.16.81.111" 1234 "kick_off_mt" 
 
 ns: compile 
-	erl $(LOCAL_OPTS) -sname ns_test
+	erl $(LOCAL_OPTS) -sname ns_test -run bot2 test_ns flashbot2 1 "172.16.81.111" 1234 "ns_status_change" 
 
 clean:
 	rm -rf ebin/*.beam

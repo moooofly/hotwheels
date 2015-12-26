@@ -24,6 +24,8 @@
 -export([run/6, test/1, test/2, test/4, publish/5]).
 -export([test/5]).
 
+-export([test_pas/1, test_ns/1]).
+
 -include_lib("kernel/include/inet.hrl").
 
 -record(state, {
@@ -170,6 +172,9 @@ test(Bot, N) ->
 test(Bot, N, Host, Port) ->
   test(Bot, N, Host, Port, <<"no-topic-set">>).
 
+test(Bot, N, Host, Port, Topic) when is_list(Topic) ->
+    test(Bot, N, Host, Port, list_to_binary(Topic));
+
 test(Bot, N, Host, Port, Topic)
   when is_atom(Bot),
        is_integer(N),
@@ -195,6 +200,16 @@ test(Bot, N, Host, Port, Topic)
                          {<<"message_id">>,<<>>},
                          {<<"data">>, Data}]},
     run(Bot, Host, Port, Message, Expected, N).
+
+
+%% test api
+
+test_pas([BotType, BotNum, Host, Port, Topic]) ->
+    test(list_to_atom(BotType), list_to_integer(BotNum), Host, list_to_integer(Port), Topic).
+
+test_ns([BotType, BotNum, Host, Port, Topic]) ->
+    test(list_to_atom(BotType), list_to_integer(BotNum), Host, list_to_integer(Port), Topic).
+
 
 %% 更新最小、最大、平均延迟时间
 update_latency(State, Latency) ->
