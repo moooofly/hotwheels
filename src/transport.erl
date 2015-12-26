@@ -56,7 +56,7 @@ handle_cast({set_socket, Socket}, State) ->
     inet:setopts(Socket, [{active, once},
                           {packet, 0},
                           binary]),
-    error_logger:info_msg("[transport] handle_cast => recv {set_socket, Socket}, call janus_flash:start~n", []),
+    % lager:info("[transport] handle_cast => recv {set_socket, Socket}, call janus_flash:start", []),
     %% 调用 janus_flash:start
     {ok, Keep, Ref} = (State#state.transport):start(Socket),
     keep_alive_or_close(Keep, State#state{socket = Socket, state = Ref});
@@ -73,7 +73,7 @@ handle_call(Event, From, State) ->
 %% 收到针对订阅 Topic 的广播消息，通过 socket 直接发送给客户端
 handle_info({message, Msg}, State) ->
     Mod = State#state.transport,
-    error_logger:info_msg("[transport] handle_info => recv {message, ~p}, call janus_flash:forward~n", [Msg]),
+    lager:info("[transport] handle_info => recv {message, ~p}, call janus_flash:forward", [Msg]),
     %% 调用 janus_flash:forward
     {ok, Keep, TS} = Mod:forward(Msg, State#state.state),
     keep_alive_or_close(Keep, State#state{state = TS});
@@ -91,7 +91,7 @@ handle_info({tcp_closed, Socket}, State)
 handle_info({tcp, Socket, <<"<regular-socket/>", 0, Bin/binary>>}, State)
   when Socket == State#state.socket ->
     inet:setopts(Socket, [{active, once}]),
-    error_logger:info_msg("[transport] handle_info => recv Bin(~p) with <regular-socket/>, dispatch~n", [Bin]),
+    lager:debug("[transport] handle_info => recv Bin(~p) with <regular-socket/>, dispatch", [Bin]),
     dispatch(Bin, janus_flash, State);
 
 %% [Note] new
@@ -99,7 +99,7 @@ handle_info({tcp, Socket, <<"<regular-socket/>", 0, Bin/binary>>}, State)
 handle_info({tcp, Socket, <<Bin/binary>>}, State)
   when Socket == State#state.socket ->
     inet:setopts(Socket, [{active, once}]),
-    error_logger:info_msg("[transport] handle_info => recv Bin(~p) without <regular-socket/>, dispatch~n", [Bin]),
+    lager:info("[transport] handle_info => recv Bin(~p) without <regular-socket/>, dispatch", [Bin]),
     dispatch(Bin, janus_flash, State);
 
 handle_info({'EXIT', _, _}, State) ->

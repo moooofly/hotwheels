@@ -60,7 +60,6 @@ acceptor_init(Parent, Port, Module) ->
       port = Port,
       module = Module
      },
-    error_logger:info_msg("janus_acceptor:acceptor_init => Listening on port(~p)~n", [Port]),
     case (catch do_init(State)) of
         {ok, ListenSocket} ->
             %% [Note] 用法 + 位置
@@ -79,6 +78,7 @@ do_init(State) ->
             {active, false}],
     case gen_tcp:listen(State#state.port, Opts) of
         {ok, ListenSocket} ->
+            lager:notice("[janus_acceptor] acceptor_init => Listening on port(~p)", [State#state.port]),
             {ok, ListenSocket};
         {error, Reason} ->
             throw({error, {listen, Reason}})
@@ -102,7 +102,7 @@ handle_connection(State, Socket) ->
     %% 在 janus_transport_sup 下动态创建 transport 进程用于处理客户端连接
     {ok, Pid} = janus_app:start_transport(State#state.port),
     ok = gen_tcp:controlling_process(Socket, Pid),
-    error_logger:info_msg("janus_acceptor:handle_connection => accept client socket(~p), create transport(~p)~n", [Socket, Pid]),
+    lager:notice("[janus_acceptor] handle_connection => accept CSocket(~p), create transport(~p)", [Socket, Pid]),
     %% Instruct the new handler to own the socket.
     %% 同步控制，告知底层模块可以基于该 socket 进行数据收发了
     %% 调用序列如下
@@ -122,7 +122,7 @@ handle_error(emfile) ->
 
 %% 这点说明有点意思
 handle_error(closed) ->
-    error_logger:info_report("The accept socket was closed by " 
+    lager:error("The accept socket was closed by " 
 			     "a third party. "
 			     "This will not have an impact on janus "
 			     "that will open a new accept socket and " 

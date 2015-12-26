@@ -78,22 +78,22 @@ handle_cast(stop, State) ->
 handle_cast({subscribe, Pid}, State=#state{topic=Topic}) ->
     %% automatically unsubscribe when dead
     Ref = erlang:monitor(process, Pid),
-    error_logger:info_msg("[pubsub] handle_cast => recv {subscribe, ~p} to Topic(~p) and ! to client_proxy(~p) ack~n", 
-        [Pid, State#state.topic, Pid]),
+    lager:debug("[pubsub] handle_cast => recv {subscribe,...} from client_proxy(~p) to Topic(~p), ack.", 
+        [Pid, State#state.topic]),
     %% 告知订阅成功
     Pid ! ack,
     ets:insert(State#state.subs, {{Topic, Pid}, Ref}),
     {noreply, State};
 
 handle_cast({unsubscribe, Pid}, State) ->
+    lager:debug("[pubsub] handle_cast => recv {unsubscribe,...} from client_proxy(~p), ack", [Pid]),
     unsubscribe1(Pid, State);
 
 handle_cast({publish, Msg}, State) ->
     %% 这里通过 io:format/2 输出打印，而没有通过 error_logger:xxx 输出，应该是因为速度问题
     %%io:format("[pubsub] handle_cast => recv {publish, Msg}~nets:info(subs): ~p~n", [ets:info(State#state.subs)]),
-    %%error_logger:info_msg("[pubsub] handle_cast => recv {publish, Msg}~nets:info(subs): ~p~n", [ets:info(State#state.subs)]),
 
-    error_logger:info_msg("[pubsub] handle_cast => recv {publish, ~p}~n", [Msg]),
+    lager:info("[pubsub] handle_cast => recv {publish, ~p}", [Msg]),
 
     %% 为 Msg 内容添加时间戳
     Start = now(),
@@ -109,7 +109,7 @@ handle_cast({publish, Msg}, State) ->
     %%End = now(),
     erlang:process_flag(priority, normal),
     %%io:format("time: ~p~n", [timer:now_diff(End, Start) / 1000]),
-    %%error_logger:info_msg("time: ~p~n", [timer:now_diff(End, Start) / 1000]),
+    %%lager:info("time: ~p~n", [timer:now_diff(End, Start) / 1000]),
     {noreply, State};
 
 handle_cast(Event, State) ->
@@ -122,6 +122,7 @@ handle_info({'EXIT', _Pid, normal}, State) ->
     {noreply, State};
 
 handle_info({'DOWN', _, process, Pid, _}, State) ->
+    lager:notice("[pubsub] handle_cast => recv {'DOWN',...} from client_proxy(~p)", [Pid]),
     unsubscribe1(Pid, State);
 
 handle_info(Info, State) ->
@@ -134,8 +135,6 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 unsubscribe1(Pid, State=#state{topic=Topic}) ->
-    error_logger:info_msg("[pubsub] handle_cast => recv {unsubscribe, ~p} to Topic(~p) and ! to client_proxy(~p) ack~n", 
-        [Pid, Topic, Pid]),
     %% 告知取消订阅成功
     Pid ! ack,
     case ets:lookup(State#state.subs, {Topic,Pid}) of
