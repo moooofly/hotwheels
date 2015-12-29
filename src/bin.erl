@@ -23,18 +23,13 @@
 
 -export([split/2]).
 
-%%
-%% Sep -> "\\000" | "\\001"
-%%
 split(Sep, Bin) 
   when is_list(Sep),
        is_binary(Bin) ->
-    %% 通过正则表达式（RE）来找到截取标记，然后把数据（Subject）截取分开
-    %% split(Subject,RE,Options) -> SplitList
     case re:split(Bin, Sep, [{return, binary}, {parts, 2}]) of
         [Bin1, Bin2] when size(Bin1) < size(Bin) andalso size(Bin2) < size(Bin) ->
             
             {ok, Bin1, Bin2};
-        [Bin1] ->	%% 此时 Bin 中尚未包含 Sep
+        [Bin1] ->
             {more, Bin1}
     end.

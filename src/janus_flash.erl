@@ -13,14 +13,13 @@
 -export([process/2, forward/2, start/1, stop/1]).
 
 -record(state, {
-          socket,   %% client socket
-          data,     %% 缓存
-          proxy,    %% client_proxy 进程 pid
-          token     %% 标识 client_proxy 进程的随机十六进制字符串
+          socket,
+          data,
+          proxy,
+          token
          }).
 
 start(Socket) ->
-    %% [Node] [Bin, 1] 的设计意图，协议数据分隔符
     Send = fun(Bin) -> gen_tcp:send(Socket, [Bin, 1]) end,
     {ok, Proxy, Token} = client_proxy:start(Send),
     State = #state{socket=Socket, proxy=Proxy, token=Token},
@@ -35,20 +34,14 @@ stop(State) ->
     catch client_proxy:detach(State#state.proxy),
     ok.
 
-%% 直接转发，针对订阅 Topic 的广播消息
 forward(Bin, State)
   when is_binary(Bin) ->
     send(Bin, State).
 
-%% [janus_flash] process 仅在 transport 模块中调用，用于处理 client socket 上收到的内容
-%% 
-%% 来自 client_proxy 的 "!"
-%% 当 publish 消息到 peer 后 30s 内无新消息要发送，则发送 PING
 process(heartbeat, State) ->
     lager:info("[janus_flash] process => send PING(heartbeat) to peer.", []),
     send(<<"PING">>, State);
 
-%% 来自 client_proxy 的 "!" ，对应 订阅 或 取消订阅 成功应答
 process(ack, State) ->
     lager:info("[janus_flash] process => send ACK to peer.", []),
     send(<<"ACK">>, State);
@@ -57,12 +50,10 @@ process(<<>>, State) ->
     % lager:info("[janus_flash] process => no more data", []),
     {ok, keep_alive, State};
 
-%% 处理带 "<regular-socket/>" 头的情况
 process(<<"<regular-socket/>", 0, Bin/binary>>, State) ->
     lager:info("[janus_flash] process => with head.", []),
     process(Bin, State);
 
-%% 处理尚有缓存数据的情况
 process(Bin, State) 
   when is_binary(State#state.data),
        is_binary(Bin) ->
@@ -70,7 +61,6 @@ process(Bin, State)
     process(list_to_binary([State#state.data, Bin]),
             State#state{data = undefined});
 
-%% 处理没有缓存数据的情况
 process(Bin, State) 
   when is_binary(Bin) ->
     % lager:info("[janus_flash] process => without buffer-data, Bin = ~p", [Bin]),
@@ -85,17 +75,14 @@ process({ok, <<>>, <<>>}, State) ->
 process({ok, <<>>, Rest}, State) ->
     process(Rest, State);
 
-%% 收到来自 peer 的 PING
 process({ok, <<"PING">>, Rest}, State) ->
     lager:info("[janus_flash] process => recv PING from peer.", []),
     process(Rest, State);
 
-%% 收到来自 peer 的 PONG
 process({ok, <<"PONG">>, Rest}, State) ->
     lager:info("[janus_flash] process => recv PONG(heartbeat) from peer.", []),
     process(Rest, State);
 
-%% 收到 PUBLISH 指令
 process({ok, <<"PUBLISH">>, Rest}, State) ->
     JSON = {struct, [{<<"topic">>, Topic},
                      {<<"event">>, _},
@@ -103,11 +90,9 @@ process({ok, <<"PUBLISH">>, Rest}, State) ->
                      {<<"data">>, _}
                     ]} = mochijson2:decode(Rest),
     lager:info("[janus_flash] process => recv PUBLISH, topman start to publish(Topic:~p).", [Topic]),
-    %% 向指定 Topic 进行 publish
     topman:publish(JSON, Topic),
     {ok, shutdown, State};
 
-%% 收到来自 flashbot 的 subscribe 或 unsubscribe
 process({ok, Bin, Rest}, State) ->
     {struct,
         [{<<"action">>, Action}, 
@@ -115,7 +100,6 @@ process({ok, Bin, Rest}, State) ->
      ]} = mochijson2:decode(Bin),
      lager:info("[janus_flash] process => recv {\"action\":~p, \"topic\":~p} from peer.", [Action, Topic]),
      lager:debug("[janus_flash] process => cast (un)subscribe info to client_proxy.", []),
-    %% 发送 subscribe 或 unsubscribe 给 client_proxy
     gen_server:cast(State#state.proxy, {Action, Topic}),
     process(Rest, State).
 

@@ -35,7 +35,6 @@
 start_transport(Port) ->
     supervisor:start_child(janus_transport_sup, [Port]).
 
-%% 应用启动入口
 start(_Type, _Args) ->
     lager:start(),
     Port = janus_admin:get_env(listen_port, ?LISTEN_PORT),
@@ -74,7 +73,6 @@ init([Port, Module]) ->
                     [mapper]
                 },
                 %% Client instance supervisor
-                %% 连锁启动实现方式
                 {janus_transport_sup,
                     {supervisor, start_link, [{local, janus_transport_sup}, ?MODULE, [Module]]},
                     permanent,
@@ -86,13 +84,12 @@ init([Port, Module]) ->
         }
     };
 
-%% Module -> 目前只有 transport 这个值
+
 init([Module]) ->
     {ok,
         {_SupFlags = {simple_one_for_one, ?MAX_RESTART, ?MAX_TIME},
             [
                 %% TCP Client
-                %% 用于处理每个连接上来的客户端的进程
                 {undefined,
                     {Module, start_link, []},
                     temporary,

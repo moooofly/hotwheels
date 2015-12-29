@@ -33,19 +33,17 @@
 -define(HEARTBEAT, 30000).
 
 -record(state, {
-          token,        %% 标识当前进程的随机十六进制字符串
-          parent,       %% transport 进程 pid
-          send,         %% fun(Bin) -> gen_tcp:send(Socket, [Bin, 1]) end
-          heartbeat,    %% 心跳定时器 Ref
-          killswitch,   %% 未使用
-          messages      %% 缓存
+          token,
+          parent,
+          send,
+          heartbeat,
+          killswitch,
+          messages
          }).
 
-%% 在 mapper 中查找 Token 对应的 pid
 locate(Token) ->
     mapper:where(client_proxy_mapper, Token).
 
-%% 提取当前缓存的所有消息（提取后清空原有消息缓存）
 poll(Ref) ->
     gen_server:call(Ref, messages).
 
@@ -55,10 +53,7 @@ attach(Ref, Send) ->
 detach(Ref) ->
     gen_server:cast(Ref, {detach, self()}).
 
-%% Send 定义为 fun(Bin) -> gen_tcp:send(Socket, [Bin, 1]) end
-%% 该接口仅被 janus_flash 模块调用
 start(Send) ->
-    %% 生成随机十六进程字符串作为 token
     Token = common:random_token(),
     {ok, Pid} = gen_server:start_link(?MODULE, [Token, self(), Send], []),
     {ok, Pid, Token}.
@@ -66,10 +61,8 @@ start(Send) ->
 stop(Ref) ->
     gen_server:cast(Ref, stop).
 
-%% Parent -> 为 transport 进程 pid
 init([Token, Parent, Send]) ->
     process_flag(trap_exit, true),
-    %% 将当前 client_proxy 进程 pid 以 token 作为标识保存到 ets 表中
     ok = mapper:add(client_proxy_mapper, Token),
     State = #state{
         token = Token,
@@ -79,16 +72,9 @@ init([Token, Parent, Send]) ->
      },
    {ok, State}.
 
-%% 附着 
-%%
-%% Parent -> 收消息的进程
-%% Send   -> 发送消息的 socket 和方式
 handle_cast({attach, Parent, Send}, State) ->
     {noreply, State#state{parent = Parent, send = Send}};
 
-%%
-%% 分离
-%%
 handle_cast({detach, Who}, State) 
   when Who == State#state.parent ->
     %% transport is gone, session stays
@@ -98,15 +84,11 @@ handle_cast({detach, Who}, State)
 handle_cast({detach, _}, State) ->
     {noreply, State};
 
-%% 处理来自 flashbot 的 subscribe ，消息来自 janus_flash:process
-%% 将自身订阅到指定 Topic 上
 handle_cast({<<"subscribe">>, Topic}, State) ->
     lager:debug("[client_proxy] handle_cast => subscribe self(~p) to Topic(~p)", [self(), Topic]),
     topman:subscribe(self(), Topic),
     {noreply, State};
 
-%% 处理来自 flashbot 的 unsubscribe ，消息来自 janus_flash:process
-%% 将自身从指定 Topic 上取消订阅
 handle_cast({<<"unsubscribe">>, Topic}, State) ->
     lager:debug("[client_proxy] handle_cast => unsubscribe Pid(~p) from Topic(~p)", [self(), Topic]),
     topman:unsubscribe(self(), Topic),
@@ -118,7 +100,6 @@ handle_cast(stop, State) ->
 handle_cast(Event, State) ->
     {stop, {unknown_cast, Event}, State}.
 
-%% 提取当前缓存的所有消息（提取后清空原有消息缓存）
 handle_call(messages, _From, State) ->
     State1 = start_heartbeat(State),
     {reply, State1#state.messages, State1#state{messages = []}};
@@ -126,7 +107,6 @@ handle_call(messages, _From, State) ->
 handle_call(Event, From, State) ->
     {stop, {unknown_call, Event, From}, State}.
 
-%% 收到来自 pubsub 针对特定 Topic 的广播消息
 handle_info({message, Msg}, State) 
   when is_pid(State#state.parent),
        is_binary(Msg) ->
@@ -134,12 +114,9 @@ handle_info({message, Msg}, State)
     %% State#state.parent ! Event,
     lager:info("[client_proxy] handle_info => recv Broadcast msg~n---~n{message, ~p}~n---~nfrom pubsub, send to peer.", 
         [Msg]),
-    %% 通过 socket 发布推送消息
     (State#state.send)(Msg),
-    %% 启动 30s 定时器，当推送后的 30s 内没有新消息需要推送，则触发 PING 发送
     {noreply, start_heartbeat(State)};
 
-%% 待发送消息缓存（原本用于 parent 不存在的情况）
 handle_info({message, Msg}, State) ->
     %% buffer messages
     Messages1 = [Msg|State#state.messages],
@@ -156,7 +133,6 @@ handle_info(heartbeat, State) ->
     %% no transport attached
     {noreply, State};
 
-%% 收到来自 pubsub 的 topic 订阅 或 取消订阅 成功应答
 handle_info(ack, State) 
   when is_pid(State#state.parent) ->
     lager:debug("[client_proxy] handle_info => recv ack to (un)subsribe from pubsub, ! to transport(~p).", 
@@ -186,7 +162,6 @@ cancel_heartbeat(State) ->
     catch erlang:cancel_timer(State#state.heartbeat),
     State#state{heartbeat = undefined}.
 
-%% 更新 heartbeat 定时器
 start_heartbeat(State) ->
     lager:debug("[client_proxy] start_heartbeat => reset heartbeat timer!"),
     Timer = erlang:send_after(?HEARTBEAT, self(), heartbeat),

@@ -31,18 +31,16 @@ is_process_alive(Pid)
 
 get_random_pid(Name) ->
     L = case pg2:get_members(Name) of
-            {error, _} ->   %% 没有找到名为 Name 的进程组
+            {error, _} ->
                 timer:sleep(100),
-                %% [Warning] 这里若再次返回 {error, {no_such_group, Name}} 将会导致问题
                 pg2:get_members(Name);
             Other when is_list(Other) ->
                 Other
         end,
     if 
-        L == [] ->  %% 名为 Name 的进程组中没有成员进程
+        L == [] ->
             {error, {no_process, Name}};
-        true -> %% [Warnging] 无法处理 {error, {no_such_group, Name}} 的情况
-            %% 从成员进程中随机取一个
+        true ->
             {_,_,X} = erlang:now(),
             {ok, lists:nth((X rem length(L)) + 1, L)}
     end.

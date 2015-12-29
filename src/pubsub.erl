@@ -19,13 +19,6 @@
 %%% FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER 
 %%% DEALINGS IN THE SOFTWARE.
 
-%%
-%% 维护特定 topic 的进程
-%%
-%% 1. 通过 ets 表维护订阅指定 topic 的进程集合
-%% 2. 对所有订阅到指定 topic（当前 pubsub 进程维护）的 client_proxy 进程进行 monitor
-%%
-
 -module(pubsub).
 
 -export([publish/2, subscribe/2, unsubscribe/2,
@@ -35,23 +28,16 @@
          handle_info/2, terminate/2, code_change/3]).
 
 -record(state, {
-          topic,        %% 当前 pubsub 进程负责处理的 topic
-          subs          %% {Key, Value} -> {{Topic,Pid}, Ref}
-         }).            %%      Topic -> 订阅关键词
-                        %%      Pid -> 订阅当前 topic 的 client_proxy 进程 pid
-                        %%      Ref -> monitor(Pid)
+          topic,
+          subs
+         }).
 
-%% 发布（广播消息给所有订阅者）
 publish(Ref, Msg) ->
     gen_server:cast(Ref, {publish, Msg}).
 
-%% 订阅
-%% Ref -> 维护特定 Topic 的 pubsub 进程 pid
-%% Pid -> client_proxy 进程 pid
 subscribe(Ref, Pid) ->
     gen_server:cast(Ref, {subscribe, Pid}).
 
-%% 取消订阅
 unsubscribe(Ref, Pid) ->
     gen_server:cast(Ref, {unsubscribe, Pid}).
 
@@ -74,13 +60,11 @@ init([Topic]) when is_atom(Topic) ->
 handle_cast(stop, State) ->
     {stop, normal, State};
 
-%% Pid -> 订阅当前 topic 的进程 pid (client_proxy)
 handle_cast({subscribe, Pid}, State=#state{topic=Topic}) ->
     %% automatically unsubscribe when dead
     Ref = erlang:monitor(process, Pid),
     lager:debug("[pubsub] handle_cast => recv {subscribe,...} from client_proxy(~p) to Topic(~p), ack.", 
         [Pid, State#state.topic]),
-    %% 告知订阅成功
     Pid ! ack,
     ets:insert(State#state.subs, {{Topic, Pid}, Ref}),
     {noreply, State};
@@ -90,26 +74,23 @@ handle_cast({unsubscribe, Pid}, State) ->
     unsubscribe1(Pid, State);
 
 handle_cast({publish, Msg}, State) ->
-    %% 这里通过 io:format/2 输出打印，而没有通过 error_logger:xxx 输出，应该是因为速度问题
     %%io:format("[pubsub] handle_cast => recv {publish, Msg}~nets:info(subs): ~p~n", [ets:info(State#state.subs)]),
-
     lager:debug("[pubsub] handle_cast => recv {publish, ~p}", [Msg]),
 
-    %% 为 Msg 内容添加时间戳
     Start = now(),
     {struct, L} = Msg,
     TS = tuple_to_list(Start),
     JSON = {struct, [{<<"timestamp">>, TS}|L]},
     Msg1 = {message, iolist_to_binary(mochijson2:encode(JSON))},
-    %% 广播给所有订阅当前 topic 的 client_proxy 进程（内部临时调高进程优先级）
     F = fun({{_Topic, Pid}, _Ref}, _) -> Pid ! Msg1 end,
-    %% [Note]
     erlang:process_flag(priority, high),
     ets:foldr(F, ignore, State#state.subs),
-    %%End = now(),
+    End = now(),
     erlang:process_flag(priority, normal),
+
     %%io:format("time: ~p~n", [timer:now_diff(End, Start) / 1000]),
-    %%lager:info("time: ~p~n", [timer:now_diff(End, Start) / 1000]),
+    lager:debug("time: ~p~n", [timer:now_diff(End, Start) / 1000]),
+
     {noreply, State};
 
 handle_cast(Event, State) ->
@@ -135,7 +116,6 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 unsubscribe1(Pid, State=#state{topic=Topic}) ->
-    %% 告知取消订阅成功
     Pid ! ack,
     case ets:lookup(State#state.subs, {Topic,Pid}) of
         [{{Topic,_Pid}, Ref}] ->

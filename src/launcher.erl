@@ -20,7 +20,6 @@
 %%% DEALINGS IN THE SOFTWARE.
 
 %%% Distributed test launcher
-%% 分布式测试发起器
 
 -module(launcher).
 -behaviour(gen_server).
@@ -31,7 +30,7 @@
          handle_info/2, terminate/2, code_change/3]).
 
 -record(state, {
-          trace = false     %% 用于表示是否启动 trace 功能的布尔值
+          trace = false
          }).
 
 new(Trace) ->
@@ -39,25 +38,17 @@ new(Trace) ->
         trace = Trace
     }.
 
-%% Trace -> true | false
 start(Trace) ->
     gen_server:start_link(?MODULE, [Trace], []).
 
-%% 随便找个 lancher 进程启动 flashbot
 launch(Mod, Args) ->
     {ok, Pid} = util:get_random_pid(?MODULE),
     launch(Pid, Mod, Args).
 
-%% 
-%% 在指定 lancher 进程上（Pid）启动 flashbot 
-%% Pid -> 从 lancher 进程组中找到的成员进程 pid
-%% Mod -> flashbot
-%% Args -> [CmdPid,janusHost,janusPort,Expected,BarrierPid]
 launch(Pid, Mod, Args) ->
     gen_server:call(Pid, {launch, Mod, Args}).
 
 
-%% 从 launcher 进程组中获取一个成员进程
 next() ->
     next([]).
 
@@ -65,10 +56,8 @@ next(undefined) ->
     next([]);
 
 next([]) ->
-    %% 获取进程组 launcher 中的所有进程
     case pg2:get_members(?MODULE) of
         [] ->
-            %% 确保一定会找到
             timer:sleep(100),
             next([]);
         L ->
@@ -80,7 +69,6 @@ next([H|T]) ->
 
 init([Trace]) ->
     process_flag(trap_exit, true),
-    %% 新建名为 launcher 的进程组，并将当前 launcher 进程添加到该进程组中
     pg2:create(?MODULE),
     ok = pg2:join(?MODULE, self()),
     {ok, new(Trace)}.
@@ -98,7 +86,6 @@ handle_cast(Event, State) ->
     {stop, {unknown_cast, Event}, State}.
 
 handle_call({launch, Mod, Args}, _From, State) ->
-    %% 启动 flashbot
     Reply = Mod:start(Args),
     {reply, Reply, State};
 

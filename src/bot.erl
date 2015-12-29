@@ -26,40 +26,30 @@
 -include_lib("kernel/include/inet.hrl").
 
 -record(state, {
-          bot,          %% 目前为 flashbot
-          barrier,      %% 目前用作 counter
+          bot,
+          barrier,
           args,
-          n,            %% 运行 bot 的目标数目
-          good,         %% 成功收到订阅消息的 flashbot 数目
-          bad,          %% 停止工作的 flashbot 数目
-          min,          %% 最小 latency
-          max,          %% 最大 latency
-          avg,          %% 平均 latency
-          host,         %% 目的 ip 地址
-          port,         %% 目的端口
-          message,      %% 待发送消息内容
-          expected,     %% 期望接收的内容
-          start,        %% 开始运行 bot:test 的时刻
-          launchers,    %% 当前可用 lancher 数量
-          where,        %% dict() 字典，用于维护每个 lancher 进程被使用过的次数
-          setup,        %% 从启动 bot:test 到全部 flashbot 订阅到 janus 的时间差
+          n,
+          good,
+          bad,
+          min,
+          max,
+          avg,
+          host,
+          port,
+          message,
+          expected,
+          start,
+          launchers,
+          where,
+          setup,
           stats
          }).
 
-
-%%
-%% Message  -> 例如 {<<"events">>, <<"test_event">>, <<"test">>}
-%% Expected -> 例如
-%%            {struct, [{<<"topic">>, <<"events">>},
-%%                      {<<"event">>, <<"test_event">>},
-%%                      {<<"message_id">>,<<>>},
-%%                      {<<"data">>, <<"test">>}]},
-%%
 run(Bot, Host, Port, Message, Expected, N) 
   when is_tuple(Message),
        is_integer(N) ->
     {ok, #hostent{h_addr_list = [Addr | _]}} = inet:gethostbyname(Host),
-    %% 启动 bot 计数器进程
     {ok, Barrier} = barrier:start(counter, N),
     State = #state{
       bot = Bot,
@@ -81,57 +71,47 @@ run(Bot, Host, Port, Message, Expected, N)
     run(State, N).
 
 run(State, 0) ->
-    %% 通过 monitor barrier 进程的退出，以确认所有 flashbot 创建完成
     erlang:monitor(process, State#state.barrier),
     wait(State, 0, 0);
 
 run(State, N) ->
-    %% 从 launcher 进程组中获取一个成员进程 Srv（lancher 进程）
     {Srv, L} = launcher:next(State#state.launchers),
-    %% 令该成员进程启动相应的工作
-    %% Pid -> 创建的 flashbot 进程 pid
     {ok, Pid} = launcher:launch(Srv, State#state.bot, 
                                 [self(),
                                  State#state.host,
                                  State#state.port,
                                  State#state.expected,
                                  State#state.barrier]),
-    %% [Note] 特意断开 link 的原因
     unlink(Pid),
     Where = State#state.where,
-    %% 更新针对被选中 lancher 进程的使用计数
-    %% update_counter(Key, Increment, Dict1) -> Dict2
     State1 = State#state{where = dict:update_counter(Srv, 1, Where)},
     run(State1#state{launchers = L}, N - 1).
 
-%% N -> 与 janus 成功建立 TCP 连接的 flashbot 数量
-%% M -> 进入 subscribing 状态的 flashbot 数量
 wait(State, N, M) 
   when State#state.good + State#state.bad < State#state.n ->
     receive
-        connected ->    %% flashbot 与 janus 成功建立 TCP 连接
+        connected ->
             wait(State, N + 1, M);
-        disconnected -> %% flashbot 与 janus 之间的 TCP 连接出现问题
+        disconnected ->
             wait(State, N - 1, M);
-        subscribing ->  %% 订阅发起中
+        subscribing ->
             wait(State, N, M + 1);
-        {success, Latency} ->   %% 收到来自 janus 的订阅内容
+        {success, Latency} ->
             State1 = update_latency(State, Latency),
             State2 = State1#state{
                        good = State1#state.good + 1,
                        stats = [Latency|State1#state.stats]
                       },
             wait(State2, N, M);
-        failure ->      %% 当前 flashbot 已停止工作（进程结束）
+        failure ->
             wait(State#state{bad = State#state.bad + 1}, N, M);
-        {tcp, _, _} ->  %% 
+        {tcp, _, _} ->
             wait(State, N, M);
-        {'DOWN', _, process, Pid, normal}   %% 发现 barrier 进程退出，即所有 flashbot 成功订阅到 janus
+        {'DOWN', _, process, Pid, normal}
           when State#state.barrier == Pid ->
             %% barrier exited
             Delta = timer:now_diff(now(), State#state.start),
             {Topic, Event, Data} = State#state.message,
-            %% 进行消息发布 publish
             bot:publish(Topic, Event, Data, 
                         State#state.host, State#state.port),
             wait(State#state{setup = Delta}, N, M);
@@ -139,9 +119,7 @@ wait(State, N, M)
             error_logger:error_report({unknown_message, X})
     end;
 
-%% 全部统计信息输出（此时全部 flashbot 完成了订阅消息的接收）
 wait(State, _, _) ->
-    %% 全部 flashbot 完成订阅消息接收的时间差
     Delta = timer:now_diff(now(), State#state.start) / 1000,
     error_logger:info_msg("setup: ~.2.0fms, good: ~p, bad: ~p, run: ~.2.0fms~n",
                           [State#state.setup / 1000,
@@ -157,12 +135,9 @@ wait(State, _, _) ->
     ok.
 
 
-%% 通过 bot 进行测试
-
 test(Bot) ->
     test(Bot, 1, localhost, 8081).
 
-%% bot:test(flashbot, 200).
 test(Bot, N) ->
     test(Bot, N, localhost, 8081).
 
@@ -170,9 +145,6 @@ test(Bot, N, Host, Port)
   when is_atom(Bot),
        is_integer(N),
        is_integer(Port) ->
-    %% [Note] 新建名为 lancher 的空进程组
-    %% 这里有一个奇怪的点事，进程组创建是否成功，需要依靠 pg2:get_members
-    %% 进行判定，而 pg2:create 只会返回 ok
     pg2:create(launcher),
     case pg2:get_members(launcher) of
         [] -> 
@@ -192,7 +164,6 @@ test(Bot, N, Host, Port)
                          {<<"data">>, Data}]},
     run(Bot, Host, Port, Message, Expected, N).
 
-%% 更新最小、最大、平均延迟时间
 update_latency(State, Latency) ->
     Min = 
         if 
@@ -211,7 +182,6 @@ update_latency(State, Latency) ->
     Avg = (State#state.avg + Latency) / 2,
     State#state{min = Min, max = Max, avg = Avg}.
 
-%% 消息发布
 publish(Topic, Event, Data, Host, Port) ->
     {ok, Socket} = gen_tcp:connect(Host, Port, [binary, 
                                                 {nodelay, true},
