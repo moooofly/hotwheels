@@ -71,20 +71,22 @@ handle_cast(stop, State) ->
 handle_cast({subscribe, Pid}, State) ->
     %% automatically unsubscribe when dead
     Ref = erlang:monitor(process, Pid),
-    error_logger:info_msg("pubsub:handle_cast => recv {subscribe, ~p} to Topic(~p) and ! to client_proxy(~p) ack~n", 
-        [Pid, State#state.topic, Pid]),
+    error_logger:info_msg("pubsub:handle_cast => recv {subscribe,...} from client_proxy(~p) to Topic(~p), ack.~n", 
+        [Pid, State#state.topic]),
     %% 告知订阅成功
     Pid ! ack,
     ets:insert(State#state.subs, {Pid, Ref}),
     {noreply, State};
 
 handle_cast({unsubscribe, Pid}, State) ->
+    error_logger:info_msg("pubsub:handle_cast => recv {unsubscribe,...} from client_proxy(~p), ack~n", [Pid]),
     unsubscribe1(Pid, State);
 
 handle_cast({publish, Msg}, State) ->
     %% 这里通过 io:format/2 输出打印，而没有通过 error_logger:xxx 输出，应该是因为速度问题
     %%io:format("pubsub:handle_cast => recv {publish, Msg}~nets:info(subs): ~p~n", [ets:info(State#state.subs)]),
-    error_logger:info_msg("pubsub:handle_cast => recv {publish, Msg}~nets:info(subs): ~p~n", [ets:info(State#state.subs)]),
+    io:format("pubsub:handle_cast => recv {publish, ~p}~n", [Msg]),
+
     %% 为 Msg 内容添加时间戳
     Start = now(),
     {struct, L} = Msg,
@@ -112,6 +114,7 @@ handle_info({'EXIT', _Pid, normal}, State) ->
     {noreply, State};
 
 handle_info({'DOWN', _, process, Pid, _}, State) ->
+    error_logger:info_msg("pubsub:handle_cast => recv {'DOWN',...} from client_proxy(~p).~n", [Pid]),
     unsubscribe1(Pid, State);
 
 handle_info(Info, State) ->

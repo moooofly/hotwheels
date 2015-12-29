@@ -91,7 +91,7 @@ handle_info({tcp_closed, Socket}, State)
 handle_info({tcp, Socket, <<"<regular-socket/>", 0, Bin/binary>>}, State)
   when Socket == State#state.socket ->
     inet:setopts(Socket, [{active, once}]),
-    error_logger:info_msg("transport:handle_info => recv Bin(~p), dispatch~n", [Bin]),
+    error_logger:info_msg("transport:handle_info => recv Bin(~p) with <regular-socket/>, dispatch~n", [Bin]),
     dispatch(Bin, janus_flash, State);
 
 handle_info({'EXIT', _, _}, State) ->
@@ -104,6 +104,7 @@ handle_info({'EXIT', _, _}, State) ->
 handle_info(Info, State) 
   when State#state.transport /= undefined ->
     Mod = State#state.transport,
+
     %% 调用 janus_flash:process
     {ok, Keep, TS} = Mod:process(Info, State#state.state),
     keep_alive_or_close(Keep, State#state{state = TS});
@@ -127,6 +128,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% [Note] 设计意图 采用不同 Mod 处理不同数据
 dispatch(Data, Mod, State = #state{transport = Mod}) ->
+    %% 调用 janus_flash:process
     {ok, Keep, TS} = Mod:process(Data, State#state.state),
     keep_alive_or_close(Keep, State#state{state = TS}).
 

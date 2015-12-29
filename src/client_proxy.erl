@@ -132,9 +132,10 @@ handle_info({message, Msg}, State)
        is_binary(Msg) ->
     %% send immediately
     %% State#state.parent ! Event,
-    error_logger:info_msg("client_proxy:handle_info => recv {message, ~p} from pubsub, send to flashbot~n", [Msg]),
-    %% 通过 socket 发送订阅内容
-    (State#state.send)(Msg), % to the socket!
+    error_logger:info_msg("client_proxy:handle_info => recv Broadcast msg~n---~n{message, ~p}~n---~nfrom pubsub, send to peer~n", [Msg]),
+    %% 通过 socket 发布推送消息
+    (State#state.send)(Msg),
+    %% 启动 30s 定时器，当推送后的 30s 内没有新消息需要推送，则触发 PING 发送
     {noreply, start_heartbeat(State)};
 
 %% 待发送消息缓存（原本用于 parent 不存在的情况）
@@ -145,7 +146,7 @@ handle_info({message, Msg}, State) ->
 
 handle_info(heartbeat, State) 
   when is_pid(State#state.parent) ->
-    error_logger:info_msg("client_proxy:handle_info => recv heartbeat and ! to transport(~p)~n", [State#state.parent]),
+    error_logger:info_msg("client_proxy:handle_info => 30s elapse after last Msg, ! to transport(~p)~n", [State#state.parent]),
     State#state.parent ! heartbeat,
     {noreply, State};
 
@@ -153,10 +154,10 @@ handle_info(heartbeat, State) ->
     %% no transport attached
     {noreply, State};
 
-%% 收到来自 pubsub 的 topic 订阅成功应答
+%% 收到来自 pubsub 的 topic 订阅 或 取消订阅 成功应答
 handle_info(ack, State) 
   when is_pid(State#state.parent) ->
-    error_logger:info_msg("client_proxy:handle_info => recv subsribe-ack from pubsub and ! to transport(~p)~n", [State#state.parent]),
+    error_logger:info_msg("client_proxy:handle_info => recv ack to (un)subsribe from pubsub, ! to transport(~p)~n", [State#state.parent]),
     State#state.parent ! ack,
     {noreply, State};
 
@@ -184,10 +185,8 @@ cancel_heartbeat(State) ->
 
 %% 更新 heartbeat 定时器
 start_heartbeat(State) ->
-    error_logger:info_msg("client_proxy:start_heartbeat => update heartbeat timer!~n"),
+    error_logger:info_msg("client_proxy:start_heartbeat => reset heartbeat timer!~n"),
     Timer = erlang:send_after(?HEARTBEAT, self(), heartbeat),
-    %% 取消之前的 heartbeat 定时器
     State1 = cancel_heartbeat(State),
-    %% 更新为新的定时器
     State1#state{heartbeat = Timer}.
 
